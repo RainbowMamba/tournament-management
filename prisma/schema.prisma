@@ -1,0 +1,219 @@
+// Tennis Tournament Management Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Auth Models
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String       @unique
+  password      String?
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  tournaments   Tournament[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// Court Models (Globally Shared Venue/Facility)
+// ─────────────────────────────────────────────────────────────
+
+model Court {
+  id        String   @id @default(cuid())
+  name      String   @unique // e.g., "Central Tennis Club", "Sports Complex"
+  location  String?          // Optional address/location info
+  numCourts Int      @default(1) // Number of individual courts in this venue
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tournaments TournamentCourt[]
+  matches     Match[]
+}
+
+model TournamentCourt {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  courtId      String
+  court        Court      @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, courtId])
+  @@index([tournamentId])
+  @@index([courtId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tournament Models
+// ─────────────────────────────────────────────────────────────
+
+enum TournamentStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+enum StageType {
+  QUALIFYING
+  MAIN
+}
+
+enum MatchStatus {
+  PENDING
+  ON_COURT
+  COMPLETED
+}
+
+enum TiebreakerPriority {
+  HEAD_TO_HEAD  // H2H first, then games won
+  GAMES_WON     // Games won first, then H2H
+}
+
+model Tournament {
+  id                  String              @id @default(cuid())
+  name                String
+  location            String?
+  startDate           DateTime?
+  hasQualifying       Boolean             @default(false)
+  tiebreakerPriority  TiebreakerPriority  @default(HEAD_TO_HEAD) // Tiebreaker priority for qualifying round-robin
+  status              TournamentStatus    @default(DRAFT)
+  staffCode           String?             // Verification code for staff access
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  ownerId          String
+  owner            User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tournamentCourts TournamentCourt[]
+  stages           Stage[]
+  teams            Team[]
+  matches          Match[]
+
+  @@index([ownerId])
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  seed      Int?
+  createdAt DateTime @default(now())
+
+  // Relations
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  groupId      String?
+  group        Group?     @relation(fields: [groupId], references: [id])
+
+  // Match relations
+  homeMatches Match[] @relation("HomeTeam")
+  awayMatches Match[] @relation("AwayTeam")
+  wonMatches  Match[] @relation("WinnerTeam")
+
+  @@index([tournamentId])
+  @@index([groupId])
+}
+
+model Stage {
+  id             String    @id @default(cuid())
+  type           StageType
+  numGroups      Int?      // Only for QUALIFYING
+  teamsPerGroup  Int?      // Only for QUALIFYING
+  teamsAdvancing Int?      // Only for QUALIFYING - number of teams advancing to main draw per group
+  totalTeams     Int?      // Only for MAIN (when no qualifying)
+  createdAt      DateTime  @default(now())
+
+  // Relations
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  groups       Group[]
+  matches      Match[]
+
+  @@unique([tournamentId, type])
+  @@index([tournamentId])
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  name      String   // A, B, C, etc.
+  index     Int
+  createdAt DateTime @default(now())
+
+  // Relations
+  stageId String
+  stage   Stage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  teams   Team[]
+  matches Match[]
+
+  // Placeholder relations for main draw matches
+  homePlaceholderMatches Match[] @relation("HomePlaceholder")
+  awayPlaceholderMatches Match[] @relation("AwayPlaceholder")
+
+  @@unique([stageId, index])
+  @@index([stageId])
+}
+
+model Match {
+  id            String      @id @default(cuid())
+  round         Int         // Round number (1, 2, 3... for bracket; 1 for round-robin)
+  matchNumber   Int         // Position within round
+  status        MatchStatus @default(PENDING)
+  homeScore     Int?        // Score for home team (games, points, or sets won)
+  awayScore     Int?        // Score for away team (games, points, or sets won)
+  scoreDetails  String?     // Optional detailed score (e.g., "6-4, 7-5" for tennis)
+  scheduledAt   DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // For bracket matches: which match feeds into this one
+  nextMatchId     String?
+  nextMatchSlot   Int?    // 0 = home, 1 = away
+  previousMatches Match[] @relation("MatchProgression")
+  nextMatch       Match?  @relation("MatchProgression", fields: [nextMatchId], references: [id])
+
+  // Relations
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  stageId      String
+  stage        Stage      @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  groupId      String?
+  group        Group?     @relation(fields: [groupId], references: [id])
+  courtId      String?
+  court        Court?     @relation(fields: [courtId], references: [id])
+  courtNumber  Int?       // Which specific court within the venue (1, 2, 3, etc.)
+
+  // Team relations
+  homeTeamId   String?
+  homeTeam     Team?   @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId   String?
+  awayTeam     Team?   @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  winnerTeamId String?
+  winnerTeam   Team?   @relation("WinnerTeam", fields: [winnerTeamId], references: [id])
+
+  // Placeholder for qualifying stage results (e.g., "1st of Group A")
+  // Used when main draw is created before qualifying is complete
+  homePlaceholderGroupId String?
+  homePlaceholderRank    Int?    // 1 = 1st place, 2 = 2nd place, etc.
+  homePlaceholderGroup   Group?  @relation("HomePlaceholder", fields: [homePlaceholderGroupId], references: [id])
+  awayPlaceholderGroupId String?
+  awayPlaceholderRank    Int?
+  awayPlaceholderGroup   Group?  @relation("AwayPlaceholder", fields: [awayPlaceholderGroupId], references: [id])
+
+  @@index([tournamentId])
+  @@index([stageId])
+  @@index([groupId])
+  @@index([courtId])
+  @@index([status])
+}
