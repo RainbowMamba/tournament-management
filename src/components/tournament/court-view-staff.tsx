@@ -489,90 +489,167 @@ export function CourtViewStaff({ tournament }: Props) {
 
       {/* Enter Result Dialog */}
       <Dialog open={!!resultMatch} onOpenChange={() => setResultMatch(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden">
+          <DialogHeader className="sr-only">
             <DialogTitle>Enter Match Result</DialogTitle>
-            <DialogDescription>Enter the final score</DialogDescription>
+            <DialogDescription>Enter the final score to complete the match</DialogDescription>
           </DialogHeader>
           {resultMatch && (
-            <div className="py-4 space-y-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 text-center space-y-3">
-                  <p className={cn("font-medium text-sm truncate", homeScore > awayScore && "text-primary")}>
-                    {resultMatch.homeTeam?.name}
+            <>
+              {/* Scoreboard */}
+              <div className="bg-foreground text-background px-6 pt-8 pb-6">
+                <div className="text-center mb-6">
+                  <p className="text-xs uppercase tracking-widest text-background/50 font-medium">
+                    {getMatchLabel(resultMatch)}
                   </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setHomeScore(Math.max(0, homeScore - 1))} disabled={isSubmitting}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input type="number" min="0" value={homeScore}
-                      onChange={(e) => setHomeScore(Math.max(0, parseInt(e.target.value) || 0))}
-                      className={cn("w-16 text-center text-2xl font-bold h-12", homeScore > awayScore && "border-primary text-primary")}
-                      disabled={isSubmitting} />
-                    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setHomeScore(homeScore + 1)} disabled={isSubmitting}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {homeScore > awayScore && (
-                    <Badge className="bg-primary/10 text-primary"><Trophy className="h-3 w-3 mr-1" />Winner</Badge>
-                  )}
                 </div>
-                <div className="text-muted-foreground font-bold text-xl">vs</div>
-                <div className="flex-1 text-center space-y-3">
-                  <p className={cn("font-medium text-sm truncate", awayScore > homeScore && "text-primary")}>
-                    {resultMatch.awayTeam?.name}
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setAwayScore(Math.max(0, awayScore - 1))} disabled={isSubmitting}>
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input type="number" min="0" value={awayScore}
-                      onChange={(e) => setAwayScore(Math.max(0, parseInt(e.target.value) || 0))}
-                      className={cn("w-16 text-center text-2xl font-bold h-12", awayScore > homeScore && "border-primary text-primary")}
-                      disabled={isSubmitting} />
-                    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setAwayScore(awayScore + 1)} disabled={isSubmitting}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  {/* Home Team */}
+                  <div className="text-center space-y-3">
+                    <p className={cn(
+                      "font-semibold text-sm truncate px-1 transition-colors",
+                      homeScore > awayScore ? "text-background" : "text-background/60"
+                    )}>
+                      {resultMatch.homeTeam?.name}
+                    </p>
+                    <button
+                      type="button"
+                      className={cn(
+                        "text-5xl font-bold tabular-nums leading-none transition-colors cursor-pointer",
+                        "hover:text-primary",
+                        homeScore > awayScore ? "text-background" : "text-background/40"
+                      )}
+                      onClick={() => setHomeScore(homeScore + 1)}
+                      disabled={isSubmitting}
+                    >
+                      {homeScore}
+                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full text-background/40 hover:text-background hover:bg-background/10"
+                        onClick={() => setHomeScore(Math.max(0, homeScore - 1))}
+                        disabled={isSubmitting}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full text-background/40 hover:text-background hover:bg-background/10"
+                        onClick={() => setHomeScore(homeScore + 1)}
+                        disabled={isSubmitting}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  {awayScore > homeScore && (
-                    <Badge className="bg-primary/10 text-primary"><Trophy className="h-3 w-3 mr-1" />Winner</Badge>
+
+                  {/* Divider */}
+                  <div className="flex flex-col items-center gap-1 pt-1">
+                    <span className="text-background/20 text-lg font-light">:</span>
+                  </div>
+
+                  {/* Away Team */}
+                  <div className="text-center space-y-3">
+                    <p className={cn(
+                      "font-semibold text-sm truncate px-1 transition-colors",
+                      awayScore > homeScore ? "text-background" : "text-background/60"
+                    )}>
+                      {resultMatch.awayTeam?.name}
+                    </p>
+                    <button
+                      type="button"
+                      className={cn(
+                        "text-5xl font-bold tabular-nums leading-none transition-colors cursor-pointer",
+                        "hover:text-primary",
+                        awayScore > homeScore ? "text-background" : "text-background/40"
+                      )}
+                      onClick={() => setAwayScore(awayScore + 1)}
+                      disabled={isSubmitting}
+                    >
+                      {awayScore}
+                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full text-background/40 hover:text-background hover:bg-background/10"
+                        onClick={() => setAwayScore(Math.max(0, awayScore - 1))}
+                        disabled={isSubmitting}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full text-background/40 hover:text-background hover:bg-background/10"
+                        onClick={() => setAwayScore(awayScore + 1)}
+                        disabled={isSubmitting}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                {/* Winner indicator */}
+                <div className="h-6 mt-4 text-center">
+                  {determineWinner() && (
+                    <p className="text-xs text-background/50 flex items-center justify-center gap-1.5">
+                      <Trophy className="h-3 w-3" />
+                      {homeScore > awayScore ? resultMatch.homeTeam?.name : resultMatch.awayTeam?.name} wins
+                    </p>
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="scoreDetails">Score Details (optional)</Label>
-                <Input
-                  id="scoreDetails"
-                  placeholder="e.g., 6-4, 7-5"
-                  value={scoreDetails}
-                  onChange={(e) => setScoreDetails(e.target.value)}
-                  disabled={isSubmitting}
-                />
+
+              {/* Details & Actions */}
+              <div className="px-6 py-5 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="scoreDetails" className="text-xs text-muted-foreground">
+                    Score Details (optional)
+                  </Label>
+                  <Input
+                    id="scoreDetails"
+                    placeholder="e.g., 6-4, 7-5"
+                    value={scoreDetails}
+                    onChange={(e) => setScoreDetails(e.target.value)}
+                    disabled={isSubmitting}
+                    className="h-10"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    className="w-full h-11 font-semibold"
+                    onClick={() => {
+                      const winner = determineWinner();
+                      if (winner) {
+                        handleCompleteMatch(winner);
+                      } else {
+                        toast.error("Scores must differ to determine a winner");
+                      }
+                    }}
+                    disabled={isSubmitting || !determineWinner()}
+                  >
+                    {isSubmitting ? "Submitting..." : "Complete Match"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full h-10 text-muted-foreground"
+                    onClick={() => setResultMatch(null)}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
-            </div>
+            </>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResultMatch(null)} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const winner = determineWinner();
-                if (winner) {
-                  handleCompleteMatch(winner);
-                } else {
-                  toast.error("Please enter valid scores");
-                }
-              }}
-              disabled={isSubmitting || !determineWinner()}
-            >
-              {isSubmitting ? "Submitting..." : "Complete Match"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
