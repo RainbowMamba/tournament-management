@@ -192,18 +192,18 @@ export async function createTournament(input: CreateTournamentInput) {
             },
           });
 
-          // Create teams for this group (may have different counts)
+          // Create teams for this group in batch
+          const groupTeams = [];
           for (let t = 0; t < teamsInThisGroup; t++) {
-            await tx.team.create({
-              data: {
-                name: shuffledTeams[teamIndex],
-                tournamentId: tournament.id,
-                groupId: group.id,
-                seed: t + 1,
-              },
+            groupTeams.push({
+              name: shuffledTeams[teamIndex],
+              tournamentId: tournament.id,
+              groupId: group.id,
+              seed: t + 1,
             });
             teamIndex++;
           }
+          await tx.team.createMany({ data: groupTeams });
         }
 
         // Create main stage (empty, will be populated after qualifying)
@@ -223,20 +223,18 @@ export async function createTournament(input: CreateTournamentInput) {
           },
         });
 
-        // Create teams
-        for (let i = 0; i < teams.length; i++) {
-          await tx.team.create({
-            data: {
-              name: teams[i],
-              tournamentId: tournament.id,
-              seed: i + 1,
-            },
-          });
-        }
+        // Create teams in batch
+        await tx.team.createMany({
+          data: teams.map((name, i) => ({
+            name,
+            tournamentId: tournament.id,
+            seed: i + 1,
+          })),
+        });
       }
 
       return tournament.id;
-    });
+    }, { timeout: 15000 });
   } catch (error) {
     console.error("Failed to create tournament:", error);
     return { error: "Failed to create tournament. Please try again." };
