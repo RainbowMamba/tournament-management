@@ -83,90 +83,74 @@ export async function generateMatches(tournamentId: string) {
     const teamIds = tournament.teams.map((t: Team) => t.id);
     const bracketMatches = generateBracketMatches(teamIds);
 
-    // Create matches with proper linking
-    const createdMatches: { matchNumber: number; id: string }[] = [];
+    // Batch create all matches at once
+    const createdMatches = await prisma.match.createManyAndReturn({
+      data: bracketMatches.map((match) => ({
+        tournamentId: tournament.id,
+        stageId: mainStage.id,
+        groupId: null,
+        round: match.round,
+        matchNumber: match.matchNumber,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        nextMatchSlot: match.nextMatchSlot,
+      })),
+      select: { id: true, matchNumber: true },
+    });
 
-    for (const match of bracketMatches) {
-      const created = await prisma.match.create({
-        data: {
-          tournamentId: tournament.id,
-          stageId: mainStage.id,
-          groupId: null,
-          round: match.round,
-          matchNumber: match.matchNumber,
-          homeTeamId: match.homeTeamId,
-          awayTeamId: match.awayTeamId,
-          nextMatchSlot: match.nextMatchSlot,
-        },
-      });
-      createdMatches.push({ matchNumber: match.matchNumber, id: created.id });
-    }
+    // Build matchNumber -> id lookup
+    const matchNumberToId = new Map(createdMatches.map((m) => [m.matchNumber, m.id]));
 
-    // Link matches to their next match
+    // Batch link matches to their next match + handle byes in one transaction
+    const updates: ReturnType<typeof prisma.match.update>[] = [];
+
+    // Link matches to next match
     for (const match of bracketMatches) {
       if (match.nextMatchNumber) {
-        const currentMatch = createdMatches.find((m) => m.matchNumber === match.matchNumber);
-        const nextMatch = createdMatches.find((m) => m.matchNumber === match.nextMatchNumber);
-
-        if (currentMatch && nextMatch) {
-          await prisma.match.update({
-            where: { id: currentMatch.id },
-            data: { nextMatchId: nextMatch.id },
-          });
+        const currentId = matchNumberToId.get(match.matchNumber);
+        const nextId = matchNumberToId.get(match.nextMatchNumber);
+        if (currentId && nextId) {
+          updates.push(
+            prisma.match.update({
+              where: { id: currentId },
+              data: { nextMatchId: nextId },
+            })
+          );
         }
       }
     }
 
-    // Handle first-round byes: if only one team in a first round match, auto-advance
+    // Handle first-round byes
     const firstRoundMatches = bracketMatches.filter((m) => m.round === 1);
     for (const match of firstRoundMatches) {
       const hasHome = match.homeTeamId !== null;
       const hasAway = match.awayTeamId !== null;
-      
-      if (hasHome && !hasAway) {
-        // Home team gets a bye, advance them
-        const currentMatch = createdMatches.find((m) => m.matchNumber === match.matchNumber);
-        if (currentMatch && match.nextMatchNumber && match.homeTeamId) {
-          const nextMatch = createdMatches.find((m) => m.matchNumber === match.nextMatchNumber);
-          if (nextMatch) {
-            await prisma.match.update({
-              where: { id: currentMatch.id },
-              data: { 
-                status: "COMPLETED",
-                winnerTeam: { connect: { id: match.homeTeamId } },
-              },
-            });
-            // Advance to next match
-            await prisma.match.update({
-              where: { id: nextMatch.id },
-              data: match.nextMatchSlot === 0 
-                ? { homeTeam: { connect: { id: match.homeTeamId } } }
-                : { awayTeam: { connect: { id: match.homeTeamId } } },
-            });
-          }
-        }
-      } else if (!hasHome && hasAway) {
-        // Away team gets a bye
-        const currentMatch = createdMatches.find((m) => m.matchNumber === match.matchNumber);
-        if (currentMatch && match.nextMatchNumber && match.awayTeamId) {
-          const nextMatch = createdMatches.find((m) => m.matchNumber === match.nextMatchNumber);
-          if (nextMatch) {
-            await prisma.match.update({
-              where: { id: currentMatch.id },
-              data: { 
-                status: "COMPLETED",
-                winnerTeam: { connect: { id: match.awayTeamId } },
-              },
-            });
-            await prisma.match.update({
-              where: { id: nextMatch.id },
+      const byeTeamId = (hasHome && !hasAway) ? match.homeTeamId : (!hasHome && hasAway) ? match.awayTeamId : null;
+
+      if (byeTeamId && match.nextMatchNumber) {
+        const currentId = matchNumberToId.get(match.matchNumber);
+        const nextId = matchNumberToId.get(match.nextMatchNumber);
+        if (currentId && nextId) {
+          updates.push(
+            prisma.match.update({
+              where: { id: currentId },
+              data: { status: "COMPLETED", winnerTeamId: byeTeamId },
+            })
+          );
+          updates.push(
+            prisma.match.update({
+              where: { id: nextId },
               data: match.nextMatchSlot === 0
-                ? { homeTeam: { connect: { id: match.awayTeamId } } }
-                : { awayTeam: { connect: { id: match.awayTeamId } } },
-            });
-          }
+                ? { homeTeamId: byeTeamId }
+                : { awayTeamId: byeTeamId },
+            })
+          );
         }
       }
+    }
+
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
     }
 
     revalidatePath(`/tournaments/${tournamentId}`);
@@ -531,97 +515,105 @@ export async function generateMainDraw(tournamentId: string) {
   const slotIds = reorderedSlots.map((_, i) => `PLACEHOLDER_${i}`);
   const bracketMatches = generateBracketMatches(slotIds);
 
-  // Create matches with placeholders
-  const createdMatches: { matchNumber: number; id: string }[] = [];
-
-  for (const match of bracketMatches) {
-    // Parse placeholder indices from the generated match data
+  // Batch create all matches with placeholders
+  const matchData = bracketMatches.map((match) => {
     const homeSlotIndex = match.homeTeamId ? parseInt(match.homeTeamId.replace("PLACEHOLDER_", "")) : null;
     const awaySlotIndex = match.awayTeamId ? parseInt(match.awayTeamId.replace("PLACEHOLDER_", "")) : null;
-
-    // Use reorderedSlots instead of placeholderSlots to maintain group separation
     const homePlaceholder = homeSlotIndex !== null ? reorderedSlots[homeSlotIndex] : null;
     const awayPlaceholder = awaySlotIndex !== null ? reorderedSlots[awaySlotIndex] : null;
 
-    const created = await prisma.match.create({
-      data: {
-        tournamentId: tournament.id,
-        stageId: mainStage.id,
-        groupId: null,
-        round: match.round,
-        matchNumber: match.matchNumber,
-        homeTeamId: null,
-        awayTeamId: null,
-        homePlaceholderGroupId: homePlaceholder?.groupId ?? null,
-        homePlaceholderRank: homePlaceholder?.rank ?? null,
-        awayPlaceholderGroupId: awayPlaceholder?.groupId ?? null,
-        awayPlaceholderRank: awayPlaceholder?.rank ?? null,
-        nextMatchSlot: match.nextMatchSlot,
-      },
-    });
-    createdMatches.push({ matchNumber: match.matchNumber, id: created.id });
-  }
+    return {
+      tournamentId: tournament.id,
+      stageId: mainStage.id,
+      groupId: null as string | null,
+      round: match.round,
+      matchNumber: match.matchNumber,
+      homeTeamId: null as string | null,
+      awayTeamId: null as string | null,
+      homePlaceholderGroupId: homePlaceholder?.groupId ?? null,
+      homePlaceholderRank: homePlaceholder?.rank ?? null,
+      awayPlaceholderGroupId: awayPlaceholder?.groupId ?? null,
+      awayPlaceholderRank: awayPlaceholder?.rank ?? null,
+      nextMatchSlot: match.nextMatchSlot,
+    };
+  });
 
-  // Link matches
+  const createdMatches = await prisma.match.createManyAndReturn({
+    data: matchData,
+    select: { id: true, matchNumber: true, homePlaceholderGroupId: true, homePlaceholderRank: true, awayPlaceholderGroupId: true, awayPlaceholderRank: true, nextMatchSlot: true },
+  });
+
+  // Build matchNumber -> match lookup
+  const matchNumberToId = new Map(createdMatches.map((m) => [m.matchNumber, m.id]));
+
+  // Batch all linking and bye handling in one transaction
+  const updates: ReturnType<typeof prisma.match.update>[] = [];
+
+  // Link matches to next match
   for (const match of bracketMatches) {
     if (match.nextMatchNumber) {
-      const currentMatch = createdMatches.find((m) => m.matchNumber === match.matchNumber);
-      const nextMatch = createdMatches.find((m) => m.matchNumber === match.nextMatchNumber);
-
-      if (currentMatch && nextMatch) {
-        await prisma.match.update({
-          where: { id: currentMatch.id },
-          data: { nextMatchId: nextMatch.id },
-        });
+      const currentId = matchNumberToId.get(match.matchNumber);
+      const nextId = matchNumberToId.get(match.nextMatchNumber);
+      if (currentId && nextId) {
+        updates.push(
+          prisma.match.update({
+            where: { id: currentId },
+            data: { nextMatchId: nextId },
+          })
+        );
       }
     }
   }
 
-  // Handle first-round byes: if one slot is null (bye), we need to handle advancement
-  // Find first round matches and handle byes by advancing placeholders to next round
-  const firstRoundMatches = await prisma.match.findMany({
-    where: {
-      stageId: mainStage.id,
-      round: 1,
-    },
-    include: {
-      homePlaceholderGroup: true,
-      awayPlaceholderGroup: true,
-    },
+  // Handle first-round byes using the data we already have (no extra query needed)
+  const firstRoundCreated = createdMatches.filter((m) => {
+    const bracket = bracketMatches.find((b) => b.matchNumber === m.matchNumber);
+    return bracket?.round === 1;
   });
 
-  for (const fMatch of firstRoundMatches) {
+  for (const fMatch of firstRoundCreated) {
     const hasHome = fMatch.homePlaceholderGroupId !== null;
     const hasAway = fMatch.awayPlaceholderGroupId !== null;
+    const bracket = bracketMatches.find((b) => b.matchNumber === fMatch.matchNumber)!;
+    const nextId = bracket.nextMatchNumber ? matchNumberToId.get(bracket.nextMatchNumber) : null;
 
-    if (hasHome && !hasAway && fMatch.nextMatchId) {
-      // Home placeholder gets a bye - mark as completed and propagate placeholder
-      await prisma.match.update({
-        where: { id: fMatch.id },
-        data: { status: "COMPLETED" },
-      });
-      // Move placeholder to next match
-      const updateData = fMatch.nextMatchSlot === 0
-        ? { homePlaceholderGroupId: fMatch.homePlaceholderGroupId, homePlaceholderRank: fMatch.homePlaceholderRank }
-        : { awayPlaceholderGroupId: fMatch.homePlaceholderGroupId, awayPlaceholderRank: fMatch.homePlaceholderRank };
-      await prisma.match.update({
-        where: { id: fMatch.nextMatchId },
-        data: updateData,
-      });
-    } else if (!hasHome && hasAway && fMatch.nextMatchId) {
-      // Away placeholder gets a bye
-      await prisma.match.update({
-        where: { id: fMatch.id },
-        data: { status: "COMPLETED" },
-      });
-      const updateData = fMatch.nextMatchSlot === 0
-        ? { homePlaceholderGroupId: fMatch.awayPlaceholderGroupId, homePlaceholderRank: fMatch.awayPlaceholderRank }
-        : { awayPlaceholderGroupId: fMatch.awayPlaceholderGroupId, awayPlaceholderRank: fMatch.awayPlaceholderRank };
-      await prisma.match.update({
-        where: { id: fMatch.nextMatchId },
-        data: updateData,
-      });
+    if (!nextId) continue;
+
+    if (hasHome && !hasAway) {
+      updates.push(
+        prisma.match.update({
+          where: { id: fMatch.id },
+          data: { status: "COMPLETED" },
+        })
+      );
+      updates.push(
+        prisma.match.update({
+          where: { id: nextId },
+          data: fMatch.nextMatchSlot === 0
+            ? { homePlaceholderGroupId: fMatch.homePlaceholderGroupId, homePlaceholderRank: fMatch.homePlaceholderRank }
+            : { awayPlaceholderGroupId: fMatch.homePlaceholderGroupId, awayPlaceholderRank: fMatch.homePlaceholderRank },
+        })
+      );
+    } else if (!hasHome && hasAway) {
+      updates.push(
+        prisma.match.update({
+          where: { id: fMatch.id },
+          data: { status: "COMPLETED" },
+        })
+      );
+      updates.push(
+        prisma.match.update({
+          where: { id: nextId },
+          data: fMatch.nextMatchSlot === 0
+            ? { homePlaceholderGroupId: fMatch.awayPlaceholderGroupId, homePlaceholderRank: fMatch.awayPlaceholderRank }
+            : { awayPlaceholderGroupId: fMatch.awayPlaceholderGroupId, awayPlaceholderRank: fMatch.awayPlaceholderRank },
+        })
+      );
     }
+  }
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
   }
 
   // Check if any groups are already complete and resolve their placeholders
@@ -664,14 +656,16 @@ export async function resolveGroupPlaceholders(tournamentId: string) {
   const qualifyingMatches = qualifyingStage.matches;
   const tiebreakerPriority = tournament.tiebreakerPriority as TiebreakerPriority;
 
-  // Check each group
+  // Determine which groups are complete and calculate standings
+  const teamsAdvancing = qualifyingStage.teamsAdvancing ?? 1;
+  const completedGroupStandings: Array<{ groupId: string; rank: number; teamId: string }> = [];
+
   for (const group of qualifyingStage.groups) {
     const groupMatches = qualifyingMatches.filter((m) => m.groupId === group.id);
     const allCompleted = groupMatches.every((m) => m.status === "COMPLETED");
 
     if (!allCompleted || groupMatches.length === 0) continue;
 
-    // Calculate final standings for this group using tiebreaker logic
     const teamIds = group.teams.map((t) => t.id);
     const matchResults = groupMatches.map((m) => ({
       homeTeamId: m.homeTeamId,
@@ -684,43 +678,61 @@ export async function resolveGroupPlaceholders(tournamentId: string) {
 
     const standings = calculateGroupStandings(teamIds, matchResults, tiebreakerPriority);
 
-    // For each rank, find and update placeholder matches
-    const teamsAdvancing = qualifyingStage.teamsAdvancing ?? 1;
     for (let rank = 1; rank <= teamsAdvancing && rank <= standings.length; rank++) {
-      const qualifiedTeam = standings[rank - 1];
-
-      // Find all main draw matches with this group/rank placeholder
-      const matchesWithPlaceholder = await prisma.match.findMany({
-        where: {
-          stageId: mainStage.id,
-          OR: [
-            { homePlaceholderGroupId: group.id, homePlaceholderRank: rank },
-            { awayPlaceholderGroupId: group.id, awayPlaceholderRank: rank },
-          ],
-        },
+      completedGroupStandings.push({
+        groupId: group.id,
+        rank,
+        teamId: standings[rank - 1].teamId,
       });
-
-      for (const match of matchesWithPlaceholder) {
-        const updateData: {
-          homeTeam?: { connect: { id: string } };
-          awayTeam?: { connect: { id: string } };
-        } = {};
-
-        if (match.homePlaceholderGroupId === group.id && match.homePlaceholderRank === rank) {
-          updateData.homeTeam = { connect: { id: qualifiedTeam.teamId } };
-        }
-        if (match.awayPlaceholderGroupId === group.id && match.awayPlaceholderRank === rank) {
-          updateData.awayTeam = { connect: { id: qualifiedTeam.teamId } };
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          await prisma.match.update({
-            where: { id: match.id },
-            data: updateData,
-          });
-        }
-      }
     }
+  }
+
+  if (completedGroupStandings.length === 0) return;
+
+  // Fetch all main draw placeholder matches in one query
+  const completedGroupIds = [...new Set(completedGroupStandings.map((s) => s.groupId))];
+  const allPlaceholderMatches = await prisma.match.findMany({
+    where: {
+      stageId: mainStage.id,
+      OR: [
+        { homePlaceholderGroupId: { in: completedGroupIds } },
+        { awayPlaceholderGroupId: { in: completedGroupIds } },
+      ],
+    },
+  });
+
+  // Build a lookup: "groupId:rank" -> teamId
+  const standingsMap = new Map(
+    completedGroupStandings.map((s) => [`${s.groupId}:${s.rank}`, s.teamId])
+  );
+
+  // Batch all updates in one transaction
+  const updates: ReturnType<typeof prisma.match.update>[] = [];
+
+  for (const match of allPlaceholderMatches) {
+    const updateData: { homeTeamId?: string; awayTeamId?: string } = {};
+
+    if (match.homePlaceholderGroupId && match.homePlaceholderRank) {
+      const teamId = standingsMap.get(`${match.homePlaceholderGroupId}:${match.homePlaceholderRank}`);
+      if (teamId) updateData.homeTeamId = teamId;
+    }
+    if (match.awayPlaceholderGroupId && match.awayPlaceholderRank) {
+      const teamId = standingsMap.get(`${match.awayPlaceholderGroupId}:${match.awayPlaceholderRank}`);
+      if (teamId) updateData.awayTeamId = teamId;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      updates.push(
+        prisma.match.update({
+          where: { id: match.id },
+          data: updateData,
+        })
+      );
+    }
+  }
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates);
   }
 }
 
