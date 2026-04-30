@@ -594,6 +594,10 @@ export async function verifyStaffCode(tournamentId: string, code: string) {
     return { error: "Invalid verification code" };
   }
 
+  const { addVerifiedTournament } = await import("@/lib/staff-session");
+  await addVerifiedTournament(tournamentId);
+  revalidatePath(`/staff/tournaments/${tournamentId}`);
+
   return { success: true };
 }
 

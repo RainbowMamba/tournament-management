@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { verifyStaffCode } from "@/lib/actions/tournament";
-import { addVerifiedTournament } from "@/lib/staff-session";
 import { toast } from "sonner";
 import { Key, Loader2 } from "lucide-react";
 
@@ -55,14 +54,11 @@ export function StaffVerificationDialog({ tournamentId, tournamentName, open, on
         return;
       }
 
-      // Add to verified tournaments in session
-      await addVerifiedTournament(tournamentId);
-
       toast.success(t('success'));
       setCode("");
       onVerified();
       router.refresh();
-    } catch (err) {
+    } catch {
       setError(t('error'));
       setIsVerifying(false);
     }
