@@ -126,6 +126,7 @@ export function StaffTournamentPageClient({ tournamentId, tournament: initialTou
           tournamentName={tournamentName}
           open={showVerification}
           onVerified={handleVerified}
+          onClose={() => router.back()}
         />
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <p className="text-muted-foreground">{t('verifyAccessPrompt')}</p>

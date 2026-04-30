@@ -24,9 +24,10 @@ type Props = {
   tournamentName: string;
   open: boolean;
   onVerified: () => void;
+  onClose?: () => void;
 };
 
-export function StaffVerificationDialog({ tournamentId, tournamentName, open, onVerified }: Props) {
+export function StaffVerificationDialog({ tournamentId, tournamentName, open, onVerified, onClose }: Props) {
   const router = useRouter();
   const t = useTranslations('staff.verification');
 
@@ -67,10 +68,11 @@ export function StaffVerificationDialog({ tournamentId, tournamentName, open, on
     }
   }
 
-  function handleOpenChange(open: boolean) {
-    if (!open && !isVerifying) {
+  function handleOpenChange(isOpen: boolean) {
+    if (!isOpen && !isVerifying) {
       setCode("");
       setError(null);
+      onClose?.();
     }
   }
 
