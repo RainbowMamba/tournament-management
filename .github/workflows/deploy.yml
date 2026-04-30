@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    env:
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+      AUTH_SECRET: build_time_placeholder_at_least_32_chars_xxxxxxxxxxxxxxxx
+      AUTH_URL: http://placeholder
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,9 +38,6 @@ jobs:
       - name: Build (Next.js standalone)
         run: npm run build
         env:
-          DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
-          AUTH_SECRET: build_time_placeholder_at_least_32_chars_xxxxxxxxxxxxxxxx
-          AUTH_URL: http://placeholder
           NODE_ENV: production
 
       - name: Pack release
