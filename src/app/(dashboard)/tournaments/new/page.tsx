@@ -713,7 +713,7 @@ export default function NewTournamentPage() {
                       id="numGroups"
                       type="number"
                       min={1}
-                      max={Math.min(8, Math.floor(totalParticipants / 2))}
+                      max={Math.floor(totalParticipants / 2)}
                       value={numGroups}
                       onChange={(e) =>
                         handleGroupsChange(parseInt(e.target.value) || 1)
