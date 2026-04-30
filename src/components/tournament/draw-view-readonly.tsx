@@ -172,7 +172,7 @@ export function DrawViewReadonly({ tournament, activeStage, onStageChange }: Pro
   const [selectedGroup, setSelectedGroup] = useState<string>(
     qualifyingStage?.groups[0]?.id || ""
   );
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("single");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("all");
 
   const qualifyingMatches = tournament.matches.filter(
     (m) => m.stageId === qualifyingStage?.id
