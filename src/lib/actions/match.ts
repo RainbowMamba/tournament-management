@@ -366,6 +366,45 @@ export async function startMatch(matchId: string) {
   return { success: true };
 }
 
+export async function startAssignedMatches(tournamentId: string) {
+  const session = await auth();
+
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { id: true, ownerId: true },
+  });
+
+  if (!tournament) {
+    return { error: "Tournament not found" };
+  }
+
+  const isOwner = session?.user?.id && tournament.ownerId === session.user.id;
+  let isStaff = false;
+  if (!isOwner) {
+    const { isTournamentVerified } = await import("@/lib/staff-session");
+    isStaff = await isTournamentVerified(tournamentId);
+  }
+
+  if (!isOwner && !isStaff) {
+    return { error: "Unauthorized" };
+  }
+
+  const updated = await prisma.match.updateMany({
+    where: {
+      tournamentId,
+      status: "PENDING",
+      courtId: { not: null },
+      homeTeamId: { not: null },
+      awayTeamId: { not: null },
+    },
+    data: { status: "ON_COURT" },
+  });
+
+  revalidatePath(`/tournaments/${tournamentId}`);
+  revalidatePath(`/staff/tournaments/${tournamentId}`);
+  return { success: true, startedCount: updated.count };
+}
+
 export async function completeMatch(
   matchId: string,
   winnerTeamId: string,

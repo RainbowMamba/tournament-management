@@ -32,7 +32,7 @@ model User {
 model Court {
   id        String   @id @default(cuid())
   name      String   @unique // e.g., "Central Tennis Club", "Sports Complex"
-  location  String?          // Optional address/location info
+  location  String? // Optional address/location info
   numCourts Int      @default(1) // Number of individual courts in this venue
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,29 +77,30 @@ enum MatchStatus {
 }
 
 enum TiebreakerPriority {
-  HEAD_TO_HEAD  // H2H first, then games won
-  GAMES_WON     // Games won first, then H2H
+  HEAD_TO_HEAD // H2H first, then games won
+  GAMES_WON // Games won first, then H2H
 }
 
 model Tournament {
-  id                  String              @id @default(cuid())
-  name                String
-  location            String?
-  startDate           DateTime?
-  hasQualifying       Boolean             @default(false)
-  tiebreakerPriority  TiebreakerPriority  @default(HEAD_TO_HEAD) // Tiebreaker priority for qualifying round-robin
-  status              TournamentStatus    @default(DRAFT)
-  staffCode           String?             // Verification code for staff access
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  id                 String             @id @default(cuid())
+  name               String
+  location           String?
+  startDate          DateTime?
+  hasQualifying      Boolean            @default(false)
+  tiebreakerPriority TiebreakerPriority @default(HEAD_TO_HEAD) // Tiebreaker priority for qualifying round-robin
+  status             TournamentStatus   @default(DRAFT)
+  staffCode          String? // Verification code for staff access
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   // Relations
-  ownerId          String
-  owner            User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  tournamentCourts TournamentCourt[]
-  stages           Stage[]
-  teams            Team[]
-  matches          Match[]
+  ownerId           String
+  owner             User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tournamentCourts  TournamentCourt[]
+  stages            Stage[]
+  teams             Team[]
+  matches           Match[]
+  resultCorrections MatchResultCorrection[]
 
   @@index([ownerId])
 }
@@ -128,10 +129,10 @@ model Team {
 model Stage {
   id             String    @id @default(cuid())
   type           StageType
-  numGroups      Int?      // Only for QUALIFYING
-  teamsPerGroup  Int?      // Only for QUALIFYING
-  teamsAdvancing Int?      // Only for QUALIFYING - number of teams advancing to main draw per group
-  totalTeams     Int?      // Only for MAIN (when no qualifying)
+  numGroups      Int? // Only for QUALIFYING
+  teamsPerGroup  Int? // Only for QUALIFYING
+  teamsAdvancing Int? // Only for QUALIFYING - number of teams advancing to main draw per group
+  totalTeams     Int? // Only for MAIN (when no qualifying)
   createdAt      DateTime  @default(now())
 
   // Relations
@@ -146,7 +147,7 @@ model Stage {
 
 model Group {
   id        String   @id @default(cuid())
-  name      String   // A, B, C, etc.
+  name      String // A, B, C, etc.
   index     Int
   createdAt DateTime @default(now())
 
@@ -165,21 +166,21 @@ model Group {
 }
 
 model Match {
-  id            String      @id @default(cuid())
-  round         Int         // Round number (1, 2, 3... for bracket; 1 for round-robin)
-  matchNumber   Int         // Position within round
-  status        MatchStatus @default(PENDING)
-  homeScore     Int?        // Score for home team (games, points, or sets won)
-  awayScore     Int?        // Score for away team (games, points, or sets won)
-  scoreDetails  String?     // Optional detailed score (e.g., "6-4, 7-5" for tennis)
-  scheduledAt   DateTime?
-  completedAt   DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id           String      @id @default(cuid())
+  round        Int // Round number (1, 2, 3... for bracket; 1 for round-robin)
+  matchNumber  Int // Position within round
+  status       MatchStatus @default(PENDING)
+  homeScore    Int? // Score for home team (games, points, or sets won)
+  awayScore    Int? // Score for away team (games, points, or sets won)
+  scoreDetails String? // Optional detailed score (e.g., "6-4, 7-5" for tennis)
+  scheduledAt  DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   // For bracket matches: which match feeds into this one
   nextMatchId     String?
-  nextMatchSlot   Int?    // 0 = home, 1 = away
+  nextMatchSlot   Int? // 0 = home, 1 = away
   previousMatches Match[] @relation("MatchProgression")
   nextMatch       Match?  @relation("MatchProgression", fields: [nextMatchId], references: [id])
 
@@ -192,7 +193,7 @@ model Match {
   group        Group?     @relation(fields: [groupId], references: [id])
   courtId      String?
   court        Court?     @relation(fields: [courtId], references: [id])
-  courtNumber  Int?       // Which specific court within the venue (1, 2, 3, etc.)
+  courtNumber  Int? // Which specific court within the venue (1, 2, 3, etc.)
 
   // Team relations
   homeTeamId   String?
@@ -205,7 +206,7 @@ model Match {
   // Placeholder for qualifying stage results (e.g., "1st of Group A")
   // Used when main draw is created before qualifying is complete
   homePlaceholderGroupId String?
-  homePlaceholderRank    Int?    // 1 = 1st place, 2 = 2nd place, etc.
+  homePlaceholderRank    Int? // 1 = 1st place, 2 = 2nd place, etc.
   homePlaceholderGroup   Group?  @relation("HomePlaceholder", fields: [homePlaceholderGroupId], references: [id])
   awayPlaceholderGroupId String?
   awayPlaceholderRank    Int?
@@ -223,4 +224,34 @@ model Match {
   @@index([awayPlaceholderGroupId])
   @@index([tournamentId, status])
   @@index([courtId, courtNumber])
+}
+
+// Audit trail for match result corrections.
+// One row per correction action; cascadedMatchIds lists every downstream match
+// that was reset back to PENDING as part of the same operation.
+model MatchResultCorrection {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  matchId      String // The match whose result was edited
+
+  // Snapshot of the original (incorrect) result
+  originalWinnerTeamId String?
+  originalHomeScore    Int?
+  originalAwayScore    Int?
+  originalScoreDetails String?
+
+  // The new (corrected) result
+  newWinnerTeamId String?
+  newHomeScore    Int?
+  newAwayScore    Int?
+  newScoreDetails String?
+
+  cascadedMatchIds String[] // downstream matches reset by this correction
+  reason           String
+  correctedBy      String // "owner:<userId>" or "staff"
+  correctedAt      DateTime @default(now())
+
+  @@index([tournamentId])
+  @@index([matchId])
 }

@@ -15,8 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LayoutGrid, Play, AlertCircle, Circle, Trophy, Minus, Plus } from "lucide-react";
-import { startMatch, completeMatch } from "@/lib/actions/match";
+import { LayoutGrid, Play, AlertCircle, Circle, Trophy, Minus, Plus, PlayCircle, Pencil } from "lucide-react";
+import { startMatch, startAssignedMatches, completeMatch } from "@/lib/actions/match";
+import { EditMatchResultDialog } from "@/components/tournament/edit-match-result-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -84,9 +85,12 @@ export function CourtViewStaff({ tournament }: Props) {
   const router = useRouter();
   const [resultMatch, setResultMatch] = useState<Match | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStartingAll, setIsStartingAll] = useState(false);
   const [homeScore, setHomeScore] = useState<number>(0);
   const [awayScore, setAwayScore] = useState<number>(0);
   const [scoreDetails, setScoreDetails] = useState<string>("");
+
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
 
   const pendingMatches = tournament.matches.filter(
     (m) => m.status === "PENDING" && !m.courtId && m.homeTeamId && m.awayTeamId
@@ -161,6 +165,22 @@ export function CourtViewStaff({ tournament }: Props) {
     }
   }
 
+  async function handleStartAllAssigned() {
+    setIsStartingAll(true);
+    const result = await startAssignedMatches(tournament.id);
+    if (result.error) {
+      toast.error(result.error);
+    } else if (result.startedCount === 0) {
+      toast.info("No assigned matches to start");
+    } else {
+      toast.success(
+        `Started ${result.startedCount} match${result.startedCount === 1 ? "" : "es"}`
+      );
+      router.refresh();
+    }
+    setIsStartingAll(false);
+  }
+
   async function handleCompleteMatch(winnerTeamId: string) {
     if (!resultMatch) return;
 
@@ -190,6 +210,18 @@ export function CourtViewStaff({ tournament }: Props) {
     setHomeScore(0);
     setAwayScore(0);
     setScoreDetails("");
+  }
+
+  function handleEditSuccess(cascadedCount: number) {
+    if (cascadedCount > 0) {
+      toast.success(
+        `Match updated. ${cascadedCount} downstream match${cascadedCount === 1 ? "" : "es"} reset.`
+      );
+    } else {
+      toast.success("Match result updated");
+    }
+    setEditingMatch(null);
+    router.refresh();
   }
 
   function determineWinner(): string | null {
@@ -278,6 +310,20 @@ export function CourtViewStaff({ tournament }: Props) {
 
       {/* Venues Grid */}
       <div className="space-y-6">
+        {scheduledMatches.length > 0 && (
+          <div className="flex items-center justify-end">
+            <Button
+              size="sm"
+              onClick={handleStartAllAssigned}
+              disabled={isStartingAll}
+            >
+              <PlayCircle className="h-4 w-4 mr-1" />
+              {isStartingAll
+                ? "Starting..."
+                : `Start All (${scheduledMatches.length})`}
+            </Button>
+          </div>
+        )}
         {tournament.courts.map((venue) => {
           const venueMatches = tournament.matches.filter(
             (m) => m.courtId === venue.id && m.status !== "COMPLETED"
@@ -487,6 +533,64 @@ export function CourtViewStaff({ tournament }: Props) {
         </div>
       )}
 
+      {/* Completed Matches */}
+      {completedMatches.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Completed Matches</h3>
+              <p className="text-sm text-muted-foreground">
+                Edit a result if it was entered incorrectly. Editing may reset downstream matches.
+              </p>
+            </div>
+            <Badge variant="secondary" className="text-sm">
+              {completedMatches.length} matches
+            </Badge>
+          </div>
+          <Card>
+            <CardContent className="p-3">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[...completedMatches]
+                  .sort((a, b) => b.matchNumber - a.matchNumber)
+                  .map((match) => {
+                    const winnerName = match.winnerTeam?.name;
+                    return (
+                      <div
+                        key={match.id}
+                        className="flex items-center gap-2 p-2.5 border rounded-md text-sm bg-background"
+                      >
+                        <Badge variant="outline" className="text-xs shrink-0">
+                          {getMatchLabel(match)}
+                        </Badge>
+                        <div className="truncate flex-1 min-w-0">
+                          <span className={cn("font-medium", winnerName === match.homeTeam?.name && "text-primary")}>
+                            {match.homeTeam?.name || "TBD"}
+                          </span>
+                          <span className="text-muted-foreground mx-1">
+                            {match.homeScore ?? "-"}:{match.awayScore ?? "-"}
+                          </span>
+                          <span className={cn("font-medium", winnerName === match.awayTeam?.name && "text-primary")}>
+                            {match.awayTeam?.name || "TBD"}
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 shrink-0"
+                          onClick={() => setEditingMatch(match)}
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Enter Result Dialog */}
       <Dialog open={!!resultMatch} onOpenChange={() => setResultMatch(null)}>
         <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden">
@@ -652,6 +756,16 @@ export function CourtViewStaff({ tournament }: Props) {
           )}
         </DialogContent>
       </Dialog>
+
+      {editingMatch && (
+        <EditMatchResultDialog
+          key={editingMatch.id}
+          match={editingMatch}
+          matchLabel={getMatchLabel(editingMatch)}
+          onClose={() => setEditingMatch(null)}
+          onSuccess={handleEditSuccess}
+        />
+      )}
     </div>
   );
 }

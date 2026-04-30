@@ -363,6 +363,10 @@
     "random": "Random",
     "mainDraw": "Main Draw",
     "bracketMatches": "Bracket Matches",
+    "startAll": "Start All ({count})",
+    "startingAll": "Starting...",
+    "startedCount": "Started {count, plural, one {# match} other {# matches}}",
+    "noMatchesToStart": "No assigned matches to start",
     "assignMatch": {
       "title": "Assign Match to Court",
       "selectCourt": "Select a court",

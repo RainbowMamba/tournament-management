@@ -40,9 +40,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LayoutGrid, Play, AlertCircle, Trophy, X, Minus, Plus, GripVertical, Shuffle, ArrowDownNarrowWide, Lock } from "lucide-react";
-import { assignMatchToCourt, unassignMatchFromCourt, startMatch, completeMatch, autoAssignMatches } from "@/lib/actions/match";
+import { LayoutGrid, Play, AlertCircle, Trophy, X, Minus, Plus, GripVertical, Shuffle, ArrowDownNarrowWide, Lock, PlayCircle, Pencil } from "lucide-react";
+import { assignMatchToCourt, unassignMatchFromCourt, startMatch, startAssignedMatches, completeMatch, autoAssignMatches } from "@/lib/actions/match";
 import { getCourtMatches } from "@/lib/actions/court";
+import { EditMatchResultDialog } from "@/components/tournament/edit-match-result-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -211,6 +212,7 @@ export function CourtView({ tournament }: Props) {
   const [homeScore, setHomeScore] = useState<number>(0);
   const [awayScore, setAwayScore] = useState<number>(0);
   const [scoreDetails, setScoreDetails] = useState<string>("");
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   
   // Cross-tournament matches state (grouped by venue)
   const [crossTournamentMatches, setCrossTournamentMatches] = useState<Map<string, CrossTournamentMatch[]>>(new Map());
@@ -232,6 +234,9 @@ export function CourtView({ tournament }: Props) {
 
   // Auto-assignment state
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
+
+  // Bulk start state
+  const [isStartingAll, setIsStartingAll] = useState(false);
 
   // Configure pointer sensor with activation constraint
   const sensors = useSensors(
@@ -630,6 +635,18 @@ export function CourtView({ tournament }: Props) {
     setScoreDetails("");
   }
 
+  function handleEditSuccess(cascadedCount: number) {
+    if (cascadedCount > 0) {
+      toast.success(
+        `Match updated. ${cascadedCount} downstream match${cascadedCount === 1 ? "" : "es"} reset.`
+      );
+    } else {
+      toast.success("Match result updated");
+    }
+    setEditingMatch(null);
+    router.refresh();
+  }
+
   function determineWinner(): string | null {
     if (!resultMatch) return null;
     if (homeScore > awayScore && resultMatch.homeTeamId) return resultMatch.homeTeamId;
@@ -669,6 +686,23 @@ export function CourtView({ tournament }: Props) {
     const stage = tournament.stages.find((s) => s.id === m.stageId);
     return stage?.type === "MAIN";
   });
+
+  async function handleStartAllAssigned() {
+    setIsStartingAll(true);
+    const result = await startAssignedMatches(tournament.id);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      const count = result.startedCount ?? 0;
+      if (count === 0) {
+        toast.info(t('noMatchesToStart'));
+      } else {
+        toast.success(t('startedCount', { count }));
+        router.refresh();
+      }
+    }
+    setIsStartingAll(false);
+  }
 
   async function handleAutoAssign(stageType: "QUALIFYING" | "MAIN", mode: "sequential" | "random") {
     setIsAutoAssigning(true);
@@ -734,6 +768,20 @@ export function CourtView({ tournament }: Props) {
 
           {/* Venues Grid */}
           <div className="space-y-6">
+            {scheduledMatches.length > 0 && (
+              <div className="flex items-center justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleStartAllAssigned}
+                  disabled={isStartingAll}
+                >
+                  <PlayCircle className="h-4 w-4 mr-1" />
+                  {isStartingAll
+                    ? t('startingAll')
+                    : t('startAll', { count: scheduledMatches.length })}
+                </Button>
+              </div>
+            )}
             {tournament.courts.map((venue) => {
               const venueMatches = tournament.matches.filter(
                 (m) => m.courtId === venue.id && m.status !== "COMPLETED"
@@ -1020,6 +1068,64 @@ export function CourtView({ tournament }: Props) {
             </div>
           )}
 
+          {/* Completed Matches */}
+          {completedMatches.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Completed Matches</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Edit a result if it was entered incorrectly. Editing may reset downstream matches.
+                  </p>
+                </div>
+                <Badge variant="secondary" className="text-sm">
+                  {completedMatches.length} matches
+                </Badge>
+              </div>
+              <Card>
+                <CardContent className="p-3">
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {[...completedMatches]
+                      .sort((a, b) => b.matchNumber - a.matchNumber)
+                      .map((match) => {
+                        const winnerName = match.winnerTeam?.name;
+                        return (
+                          <div
+                            key={match.id}
+                            className="flex items-center gap-2 p-2.5 border rounded-md text-sm bg-background"
+                          >
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {getMatchLabel(match)}
+                            </Badge>
+                            <div className="truncate flex-1 min-w-0">
+                              <span className={cn("font-medium", winnerName === match.homeTeam?.name && "text-primary")}>
+                                {match.homeTeam?.name || "TBD"}
+                              </span>
+                              <span className="text-muted-foreground mx-1">
+                                {match.homeScore ?? "-"}:{match.awayScore ?? "-"}
+                              </span>
+                              <span className={cn("font-medium", winnerName === match.awayTeam?.name && "text-primary")}>
+                                {match.awayTeam?.name || "TBD"}
+                              </span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 shrink-0"
+                              onClick={() => setEditingMatch(match)}
+                            >
+                              <Pencil className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {/* Drag Overlay */}
           <DragOverlay>
             {activeMatch ? (
@@ -1183,6 +1289,16 @@ export function CourtView({ tournament }: Props) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {editingMatch && (
+          <EditMatchResultDialog
+            key={editingMatch.id}
+            match={editingMatch}
+            matchLabel={getMatchLabel(editingMatch)}
+            onClose={() => setEditingMatch(null)}
+            onSuccess={handleEditSuccess}
+          />
+        )}
       </DndContext>
     </TooltipProvider>
   );
