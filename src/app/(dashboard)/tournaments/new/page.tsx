@@ -24,8 +24,6 @@ import {
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Check, Trophy, Users, Layers, X, Plus, Upload, Download, LayoutGrid, MapPin, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
 
 type WizardStep = "basics" | "format" | "teams" | "review";
 
@@ -286,7 +284,8 @@ export default function NewTournamentPage() {
 
     try {
       if (isXlsx) {
-        // Parse Excel file
+        // Lazy-load xlsx (~250KB) only when an Excel file is actually imported.
+        const XLSX = await import("xlsx");
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
@@ -301,7 +300,8 @@ export default function NewTournamentPage() {
           defval: "",
         }) as Array<Array<string | undefined>>;
       } else {
-        // Parse CSV file
+        // Lazy-load papaparse only when a CSV file is actually imported.
+        const Papa = (await import("papaparse")).default;
         const text = await file.text();
         const parsed = Papa.parse<string[]>(text, {
           skipEmptyLines: "greedy",

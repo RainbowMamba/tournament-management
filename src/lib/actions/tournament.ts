@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Tournament, TournamentStatus } from "@prisma/client";
+import { logger } from "@/lib/logger";
+import { rateLimit, getClientKey } from "@/lib/rate-limit";
 
 /**
  * Fisher-Yates shuffle algorithm for randomizing array order
@@ -236,9 +238,12 @@ export async function createTournament(input: CreateTournamentInput) {
       }
 
       return tournament.id;
-    }, { timeout: 15000 });
+    }, { timeout: 30000 });
   } catch (error) {
-    console.error("Failed to create tournament:", error);
+    logger.error("Failed to create tournament", {
+      userId: session.user.id,
+      error,
+    });
     return { error: "Failed to create tournament. Please try again." };
   }
 
@@ -554,9 +559,23 @@ export async function generateStaffCode(tournamentId: string) {
 }
 
 /**
- * Verify staff code for a tournament
+ * Verify staff code for a tournament.
+ *
+ * Rate-limited per IP to defeat brute-force on the 8-char alphanumeric code.
  */
 export async function verifyStaffCode(tournamentId: string, code: string) {
+  // 10 attempts per IP per 15 minutes. Tight enough to make brute force
+  // infeasible while still allowing humans to retype a typo a few times.
+  const key = await getClientKey(`staff-verify:${tournamentId}`);
+  const rl = rateLimit(key, 10, 15 * 60 * 1000);
+  if (!rl.ok) {
+    const retryMin = Math.ceil(rl.retryAfterMs / 60000);
+    logger.warn("Staff code rate limit exceeded", { tournamentId, key });
+    return {
+      error: `Too many attempts. Please try again in ${retryMin} minute${retryMin === 1 ? "" : "s"}.`,
+    };
+  }
+
   const tournament = await prisma.tournament.findFirst({
     where: { id: tournamentId },
     select: { id: true, staffCode: true },
@@ -571,6 +590,7 @@ export async function verifyStaffCode(tournamentId: string, code: string) {
   }
 
   if (tournament.staffCode !== code.trim().toUpperCase()) {
+    logger.info("Staff code verification failed", { tournamentId });
     return { error: "Invalid verification code" };
   }
 

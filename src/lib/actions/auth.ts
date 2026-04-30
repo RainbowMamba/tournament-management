@@ -9,6 +9,7 @@ export async function register(formData: FormData) {
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  const inviteCode = formData.get("inviteCode") as string;
 
   if (!email || !password) {
     return { error: "Email and password are required" };
@@ -16,6 +17,14 @@ export async function register(formData: FormData) {
 
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters" };
+  }
+
+  const expectedCode = process.env.SIGNUP_INVITE_CODE;
+  if (!expectedCode) {
+    return { error: "Signup is currently disabled" };
+  }
+  if (inviteCode !== expectedCode) {
+    return { error: "Invalid invite code" };
   }
 
   const existingUser = await prisma.user.findUnique({

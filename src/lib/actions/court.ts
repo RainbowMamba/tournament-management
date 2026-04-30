@@ -1,8 +1,10 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import type { Court } from "@prisma/client";
+import { logger } from "@/lib/logger";
 
 export type CourtWithUsage = Court & {
   _count: {
@@ -131,7 +133,10 @@ export async function createCourt(data: { name: string; location?: string; numCo
     revalidatePath("/courts");
     return { success: true, court };
   } catch (error) {
-    console.error("Failed to create court:", error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { error: "A venue with this name already exists" };
+    }
+    logger.error("Failed to create court", { error });
     return { error: "Failed to create venue. Please try again." };
   }
 }
@@ -182,7 +187,10 @@ export async function updateCourt(
     revalidatePath("/courts");
     return { success: true, court: updated };
   } catch (error) {
-    console.error("Failed to update court:", error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { error: "A venue with this name already exists" };
+    }
+    logger.error("Failed to update court", { courtId: id, error });
     return { error: "Failed to update venue. Please try again." };
   }
 }
@@ -224,7 +232,7 @@ export async function deleteCourt(id: string) {
     revalidatePath("/courts");
     return { success: true };
   } catch (error) {
-    console.error("Failed to delete court:", error);
+    logger.error("Failed to delete court", { courtId: id, error });
     return { error: "Failed to delete venue. Please try again." };
   }
 }

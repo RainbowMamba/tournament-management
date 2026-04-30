@@ -86,6 +86,8 @@
       "emailPlaceholder": "you@example.com",
       "password": "Password",
       "passwordPlaceholder": "••••••••",
+      "inviteCode": "Invite code",
+      "inviteCodePlaceholder": "Enter the invite code from your admin",
       "submit": "Create account",
       "submitting": "Creating account...",
       "hasAccount": "Already have an account?",

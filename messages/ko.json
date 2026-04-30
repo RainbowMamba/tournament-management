@@ -86,6 +86,8 @@
       "emailPlaceholder": "example@email.com",
       "password": "비밀번호",
       "passwordPlaceholder": "••••••••",
+      "inviteCode": "초대 코드",
+      "inviteCodePlaceholder": "관리자에게 받은 초대 코드를 입력하세요",
       "submit": "계정 만들기",
       "submitting": "계정 생성 중...",
       "hasAccount": "이미 계정이 있으신가요?",
