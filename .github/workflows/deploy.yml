@@ -1,0 +1,87 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Build (Next.js standalone)
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+          AUTH_SECRET: build_time_placeholder_at_least_32_chars_xxxxxxxxxxxxxxxx
+          AUTH_URL: http://placeholder
+          NODE_ENV: production
+
+      - name: Pack release
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          tar -czf release.tar.gz -C .next/standalone .
+          tar -czf prisma.tar.gz prisma
+
+      - name: Upload artifacts to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "release.tar.gz,prisma.tar.gz"
+          target: "/var/www/tournament/incoming"
+
+      - name: Activate release on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            APP=/var/www/tournament
+            TS=$(date +%Y%m%d%H%M%S)
+            REL=$APP/releases/$TS
+
+            mkdir -p "$REL"
+            tar -xzf "$APP/incoming/release.tar.gz" -C "$REL"
+            tar -xzf "$APP/incoming/prisma.tar.gz" -C "$REL"
+            ln -sf "$APP/shared/.env" "$REL/.env"
+
+            cd "$REL"
+            set -a
+            . ./.env
+            set +a
+            prisma migrate deploy --schema=./prisma/schema.prisma
+
+            ln -sfn "$REL" "$APP/current"
+
+            pm2 delete tournament 2>/dev/null || true
+            pm2 start "$APP/current/server.js" --name tournament --cwd "$APP/current" --update-env
+            pm2 save
+
+            ls -1dt $APP/releases/*/ | tail -n +6 | xargs -r rm -rf
+            rm -f $APP/incoming/*.tar.gz
