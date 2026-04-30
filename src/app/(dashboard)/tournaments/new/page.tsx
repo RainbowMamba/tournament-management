@@ -21,6 +21,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Check, Trophy, Users, Layers, X, Plus, Upload, Download, LayoutGrid, MapPin, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -302,7 +308,15 @@ export default function NewTournamentPage() {
       } else {
         // Lazy-load papaparse only when a CSV file is actually imported.
         const Papa = (await import("papaparse")).default;
-        const text = await file.text();
+        // Excel on Korean Windows saves CSV as CP949/EUC-KR, not UTF-8.
+        // Try strict UTF-8 first; on failure, fall back to EUC-KR (covers CP949).
+        const buffer = await file.arrayBuffer();
+        let text: string;
+        try {
+          text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+        } catch {
+          text = new TextDecoder("euc-kr").decode(buffer);
+        }
         const parsed = Papa.parse<string[]>(text, {
           skipEmptyLines: "greedy",
         });
@@ -371,20 +385,42 @@ export default function NewTournamentPage() {
     toast.success(t('teams.importAppended'));
   }
 
-  function downloadCsvTemplate() {
-    const header = "name";
-    const rows = Array.from({ length: expectedTeamCount }, (_, i) => `Team ${i + 1}`);
-    const csv = [header, ...rows].join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  function triggerBlobDownload(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `teams-template-${expectedTeamCount}.csv`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadCsvTemplate() {
+    const header = "name";
+    const rows = Array.from({ length: expectedTeamCount }, (_, i) => `Team ${i + 1}`);
+    // Prepend UTF-8 BOM so Excel opens the file as UTF-8 instead of the system codepage.
+    const csv = "﻿" + [header, ...rows].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    triggerBlobDownload(blob, `teams-template-${expectedTeamCount}.csv`);
+  }
+
+  async function downloadExcelTemplate() {
+    const XLSX = await import("xlsx");
+    const data = [
+      ["name"],
+      ...Array.from({ length: expectedTeamCount }, (_, i) => [`Team ${i + 1}`]),
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Teams");
+    const buffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    triggerBlobDownload(blob, `teams-template-${expectedTeamCount}.xlsx`);
   }
 
   async function handleSubmit() {
@@ -825,10 +861,22 @@ export default function NewTournamentPage() {
                       {t('teams.expectedTeams')}: <span className="font-medium">{expectedTeamCount}</span>. {t('teams.importDescription')}
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={downloadCsvTemplate}>
-                    <Download className="mr-2 h-4 w-4" />
-                    {t('teams.downloadTemplate')}
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4" />
+                        {t('teams.downloadTemplate')}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={downloadExcelTemplate}>
+                        Excel (.xlsx)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={downloadCsvTemplate}>
+                        CSV (.csv)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
