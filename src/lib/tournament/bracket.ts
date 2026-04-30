@@ -124,17 +124,11 @@ function generateBracketPositions(size: number): number[] {
 }
 
 /**
- * Reorder placeholder slots to separate players from the same group
- * into opposite halves of the bracket (so they only meet in the final)
- * 
- * Strategy:
- * 1. Group players by their groupId
- * 2. For each group, distribute players between upper and lower halves
- * 3. Reorder the final array so that when bracket positions are applied,
- *    players from the same group end up in opposite halves
- * 
- * @param placeholderSlots Array of placeholders with groupId, rank, and groupIndex
- * @returns Reordered array of placeholder slots
+ * Reorder placeholder slots so seeds align with rank (group winners take top
+ * seeds and receive byes first) while keeping same-group players in opposite
+ * halves of the bracket whenever possible.
+ *
+ * Returns slots in seed order (index 0 → seed 1, index 1 → seed 2, ...).
  */
 export function separateGroupPlayers<T extends { groupId: string; rank: number; groupIndex: number }>(
   placeholderSlots: T[]
@@ -143,112 +137,71 @@ export function separateGroupPlayers<T extends { groupId: string; rank: number; 
     return placeholderSlots;
   }
 
-  // Find the bracket size (next power of 2)
   const bracketSize = Math.pow(2, Math.ceil(Math.log2(placeholderSlots.length)));
   const halfSize = bracketSize / 2;
-
-  // Group placeholders by groupId
-  const byGroup = new Map<string, T[]>();
-  for (const slot of placeholderSlots) {
-    if (!byGroup.has(slot.groupId)) {
-      byGroup.set(slot.groupId, []);
-    }
-    byGroup.get(slot.groupId)!.push(slot);
-  }
-
-  // Separate into upper and lower halves
-  const upperHalf: T[] = [];
-  const lowerHalf: T[] = [];
-
-  // Process groups, distributing players across halves
-  const groups = Array.from(byGroup.entries()).sort((a, b) => {
-    // Sort by group index for consistency
-    return a[1][0].groupIndex - b[1][0].groupIndex;
-  });
-
-  for (const [groupId, players] of groups) {
-    // Sort players by rank (1st, 2nd, 3rd, etc.)
-    const sortedPlayers = [...players].sort((a, b) => a.rank - b.rank);
-    
-    // Distribute players across halves, alternating to separate them
-    for (let i = 0; i < sortedPlayers.length; i++) {
-      const player = sortedPlayers[i];
-      
-      // Alternate: even indices (0, 2, 4...) go to upper, odd (1, 3, 5...) go to lower
-      // This ensures 1st and 2nd from same group are in opposite halves
-      if (i % 2 === 0) {
-        upperHalf.push(player);
-      } else {
-        lowerHalf.push(player);
-      }
-    }
-  }
-
-  // Get bracket positions to understand the seeding structure
   const bracketPositions = generateBracketPositions(bracketSize);
-  
-  // The bracketPositions array maps: position index -> seed number
-  // For example, for size 8: [1, 8, 4, 5, 2, 7, 3, 6]
-  // This means: position 0 gets seed 1, position 1 gets seed 8, etc.
-  // Positions 0-3 are upper half, positions 4-7 are lower half
-  
-  // We need to create a mapping: seed number -> which half it should be in
-  // Then assign our separated players to seeds accordingly
-  
-  // Create arrays to track which seeds go to which half
+
+  // Real seeds (1..n) split by which bracket half their position lives in.
   const upperSeeds: number[] = [];
   const lowerSeeds: number[] = [];
-  
   for (let pos = 0; pos < bracketSize; pos++) {
     const seed = bracketPositions[pos];
-    if (pos < halfSize) {
-      upperSeeds.push(seed);
-    } else {
-      lowerSeeds.push(seed);
-    }
+    if (seed > placeholderSlots.length) continue;
+    if (pos < halfSize) upperSeeds.push(seed);
+    else lowerSeeds.push(seed);
   }
-  
-  // Sort seeds to process them in order
   upperSeeds.sort((a, b) => a - b);
   lowerSeeds.sort((a, b) => a - b);
-  
-  // Now assign our separated players to seeds
-  // We'll create a result array where result[i] is the player for seed i+1
-  const result: (T | null)[] = new Array(placeholderSlots.length).fill(null);
-  
+
+  // Process teams in canonical seed order: rank ascending, then group index.
+  const sortedTeams = [...placeholderSlots].sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.groupIndex - b.groupIndex;
+  });
+
+  const seedToTeam: (T | undefined)[] = new Array(placeholderSlots.length + 1);
+  const groupCounts = new Map<string, { upper: number; lower: number }>();
   let upperIdx = 0;
   let lowerIdx = 0;
-  
-  // Assign upper half players to upper half seeds
-  for (const seed of upperSeeds) {
-    if (seed <= placeholderSlots.length && upperIdx < upperHalf.length) {
-      result[seed - 1] = upperHalf[upperIdx];
+
+  for (const team of sortedTeams) {
+    const counts = groupCounts.get(team.groupId) ?? { upper: 0, lower: 0 };
+    const upperFull = upperIdx >= upperSeeds.length;
+    const lowerFull = lowerIdx >= lowerSeeds.length;
+
+    let half: "upper" | "lower";
+    if (upperFull) {
+      half = "lower";
+    } else if (lowerFull) {
+      half = "upper";
+    } else if (counts.upper < counts.lower) {
+      // Prefer the half where this group has fewer teams (separation).
+      half = "upper";
+    } else if (counts.lower < counts.upper) {
+      half = "lower";
+    } else {
+      // Tie: assign to the half whose next available seed is lower (better seed).
+      half = upperSeeds[upperIdx] <= lowerSeeds[lowerIdx] ? "upper" : "lower";
+    }
+
+    if (half === "upper") {
+      seedToTeam[upperSeeds[upperIdx]] = team;
       upperIdx++;
-    }
-  }
-  
-  // Assign lower half players to lower half seeds
-  for (const seed of lowerSeeds) {
-    if (seed <= placeholderSlots.length && lowerIdx < lowerHalf.length) {
-      result[seed - 1] = lowerHalf[lowerIdx];
+      counts.upper++;
+    } else {
+      seedToTeam[lowerSeeds[lowerIdx]] = team;
       lowerIdx++;
+      counts.lower++;
     }
+    groupCounts.set(team.groupId, counts);
   }
-  
-  // If we have leftover players (e.g., when bracket size > actual players),
-  // fill remaining slots alternating between halves
-  let remainingUpper = upperHalf.slice(upperIdx);
-  let remainingLower = lowerHalf.slice(lowerIdx);
-  let remaining = [...remainingUpper, ...remainingLower];
-  
-  for (let i = 0; i < result.length && remaining.length > 0; i++) {
-    if (result[i] === null) {
-      result[i] = remaining.shift()!;
-    }
+
+  const result: T[] = [];
+  for (let seed = 1; seed <= placeholderSlots.length; seed++) {
+    const team = seedToTeam[seed];
+    if (team) result.push(team);
   }
-  
-  // Return in seed order (1, 2, 3, ...)
-  return result.filter((item): item is T => item !== null);
+  return result;
 }
 
 /**
