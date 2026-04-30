@@ -288,14 +288,14 @@ export default function CourtsPage() {
                       <div className="space-y-1.5">
                         <p className="text-xs text-muted-foreground">{t('usedBy')}</p>
                         <div className="flex flex-wrap gap-1.5">
-                          {court.tournaments.slice(0, 3).map((tc) => (
+                          {court.tournaments.map((tc) => (
                             <Badge key={tc.tournament.id} variant="outline" className="text-xs">
                               {tc.tournament.name}
                             </Badge>
                           ))}
-                          {court.tournaments.length > 3 && (
+                          {court._count.tournaments > 3 && (
                             <Badge variant="secondary" className="text-xs">
-                              +{court.tournaments.length - 3} {t('more')}
+                              +{court._count.tournaments - 3} {t('more')}
                             </Badge>
                           )}
                         </div>

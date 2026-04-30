@@ -216,4 +216,11 @@ model Match {
   @@index([groupId])
   @@index([courtId])
   @@index([status])
+  @@index([nextMatchId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([homePlaceholderGroupId])
+  @@index([awayPlaceholderGroupId])
+  @@index([tournamentId, status])
+  @@index([courtId, courtNumber])
 }

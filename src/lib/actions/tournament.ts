@@ -177,25 +177,27 @@ export async function createTournament(input: CreateTournamentInput) {
         // Randomly shuffle teams before assigning to groups
         const shuffledTeams = shuffleArray(teams);
 
-        // Create groups and assign teams with uneven distribution
+        // Batch create all groups at once, then batch create all teams
         const groupNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+        const createdGroups = await tx.group.createManyAndReturn({
+          data: Array.from({ length: numGroups! }, (_, g) => ({
+            name: groupNames[g],
+            index: g,
+            stageId: qualifyingStage.id,
+          })),
+          select: { id: true, index: true },
+        });
+
+        // Sort by index to guarantee correct team assignment order
+        createdGroups.sort((a, b) => a.index - b.index);
+
+        const allTeamData: Array<{ name: string; tournamentId: string; groupId: string; seed: number }> = [];
         let teamIndex = 0;
-
-        for (let g = 0; g < numGroups!; g++) {
-          const teamsInThisGroup = groupDistribution![g];
-
-          const group = await tx.group.create({
-            data: {
-              name: groupNames[g],
-              index: g,
-              stageId: qualifyingStage.id,
-            },
-          });
-
-          // Create teams for this group in batch
-          const groupTeams = [];
+        for (const group of createdGroups) {
+          const teamsInThisGroup = groupDistribution![group.index];
           for (let t = 0; t < teamsInThisGroup; t++) {
-            groupTeams.push({
+            allTeamData.push({
               name: shuffledTeams[teamIndex],
               tournamentId: tournament.id,
               groupId: group.id,
@@ -203,8 +205,8 @@ export async function createTournament(input: CreateTournamentInput) {
             });
             teamIndex++;
           }
-          await tx.team.createMany({ data: groupTeams });
         }
+        await tx.team.createMany({ data: allTeamData });
 
         // Create main stage (empty, will be populated after qualifying)
         await tx.stage.create({
@@ -279,31 +281,35 @@ export async function getTournament(id: string) {
     include: {
       tournamentCourts: {
         include: {
-          court: true,
+          court: { select: { id: true, name: true, numCourts: true, location: true } },
         },
-        orderBy: {
-          court: { name: "asc" },
-        },
+        orderBy: { court: { name: "asc" } },
       },
       stages: {
         include: {
           groups: {
             include: {
-              teams: { orderBy: { seed: "asc" } },
+              teams: {
+                select: { id: true, name: true, seed: true, groupId: true },
+                orderBy: { seed: "asc" },
+              },
             },
             orderBy: { index: "asc" },
           },
         },
       },
-      teams: { orderBy: { seed: "asc" } },
+      teams: {
+        select: { id: true, name: true, seed: true, groupId: true },
+        orderBy: { seed: "asc" },
+      },
       matches: {
         include: {
-          homeTeam: true,
-          awayTeam: true,
-          winnerTeam: true,
-          court: true,
-          homePlaceholderGroup: true,
-          awayPlaceholderGroup: true,
+          homeTeam: { select: { id: true, name: true } },
+          awayTeam: { select: { id: true, name: true } },
+          winnerTeam: { select: { id: true, name: true } },
+          court: { select: { id: true, name: true, numCourts: true } },
+          homePlaceholderGroup: { select: { id: true, name: true } },
+          awayPlaceholderGroup: { select: { id: true, name: true } },
         },
         orderBy: [{ round: "asc" }, { matchNumber: "asc" }],
       },
@@ -312,7 +318,6 @@ export async function getTournament(id: string) {
 
   if (!tournament) return null;
 
-  // Transform to include courts array for backward compatibility
   return {
     ...tournament,
     courts: tournament.tournamentCourts.map((tc) => tc.court),
@@ -461,31 +466,35 @@ export async function getPublicTournament(id: string) {
     include: {
       tournamentCourts: {
         include: {
-          court: true,
+          court: { select: { id: true, name: true, numCourts: true, location: true } },
         },
-        orderBy: {
-          court: { name: "asc" },
-        },
+        orderBy: { court: { name: "asc" } },
       },
       stages: {
         include: {
           groups: {
             include: {
-              teams: { orderBy: { seed: "asc" } },
+              teams: {
+                select: { id: true, name: true, seed: true, groupId: true },
+                orderBy: { seed: "asc" },
+              },
             },
             orderBy: { index: "asc" },
           },
         },
       },
-      teams: { orderBy: { seed: "asc" } },
+      teams: {
+        select: { id: true, name: true, seed: true, groupId: true },
+        orderBy: { seed: "asc" },
+      },
       matches: {
         include: {
-          homeTeam: true,
-          awayTeam: true,
-          winnerTeam: true,
-          court: true,
-          homePlaceholderGroup: true,
-          awayPlaceholderGroup: true,
+          homeTeam: { select: { id: true, name: true } },
+          awayTeam: { select: { id: true, name: true } },
+          winnerTeam: { select: { id: true, name: true } },
+          court: { select: { id: true, name: true, numCourts: true } },
+          homePlaceholderGroup: { select: { id: true, name: true } },
+          awayPlaceholderGroup: { select: { id: true, name: true } },
         },
         orderBy: [{ round: "asc" }, { matchNumber: "asc" }],
       },
@@ -494,7 +503,6 @@ export async function getPublicTournament(id: string) {
 
   if (!tournament) return null;
 
-  // Transform to include courts array for backward compatibility
   return {
     ...tournament,
     courts: tournament.tournamentCourts.map((tc) => tc.court),
@@ -638,12 +646,7 @@ export async function getStaffTournaments(search?: string): Promise<PublicTourna
  */
 export async function getStaffTournament(id: string) {
   const { isTournamentVerified } = await import("@/lib/staff-session");
-  
-  // Check if tournament is verified in session
-  const isVerified = await isTournamentVerified(id);
-  if (!isVerified) {
-    return null;
-  }
+  if (!(await isTournamentVerified(id))) return null;
 
   const tournament = await prisma.tournament.findFirst({
     where: {
@@ -653,31 +656,35 @@ export async function getStaffTournament(id: string) {
     include: {
       tournamentCourts: {
         include: {
-          court: true,
+          court: { select: { id: true, name: true, numCourts: true, location: true } },
         },
-        orderBy: {
-          court: { name: "asc" },
-        },
+        orderBy: { court: { name: "asc" } },
       },
       stages: {
         include: {
           groups: {
             include: {
-              teams: { orderBy: { seed: "asc" } },
+              teams: {
+                select: { id: true, name: true, seed: true, groupId: true },
+                orderBy: { seed: "asc" },
+              },
             },
             orderBy: { index: "asc" },
           },
         },
       },
-      teams: { orderBy: { seed: "asc" } },
+      teams: {
+        select: { id: true, name: true, seed: true, groupId: true },
+        orderBy: { seed: "asc" },
+      },
       matches: {
         include: {
-          homeTeam: true,
-          awayTeam: true,
-          winnerTeam: true,
-          court: true,
-          homePlaceholderGroup: true,
-          awayPlaceholderGroup: true,
+          homeTeam: { select: { id: true, name: true } },
+          awayTeam: { select: { id: true, name: true } },
+          winnerTeam: { select: { id: true, name: true } },
+          court: { select: { id: true, name: true, numCourts: true } },
+          homePlaceholderGroup: { select: { id: true, name: true } },
+          awayPlaceholderGroup: { select: { id: true, name: true } },
         },
         orderBy: [{ round: "asc" }, { matchNumber: "asc" }],
       },
@@ -686,7 +693,6 @@ export async function getStaffTournament(id: string) {
 
   if (!tournament) return null;
 
-  // Transform to include courts array for backward compatibility
   return {
     ...tournament,
     courts: tournament.tournamentCourts.map((tc) => tc.court),

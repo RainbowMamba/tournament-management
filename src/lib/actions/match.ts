@@ -20,13 +20,19 @@ export async function generateMatches(tournamentId: string) {
         include: {
           groups: {
             include: {
-              teams: { orderBy: { seed: "asc" } },
+              teams: {
+                select: { id: true },
+                orderBy: { seed: "asc" },
+              },
             },
           },
         },
       },
-      teams: { orderBy: { seed: "asc" } },
-      matches: true,
+      teams: {
+        select: { id: true },
+        orderBy: { seed: "asc" },
+      },
+      _count: { select: { matches: true } },
     },
   });
 
@@ -34,7 +40,7 @@ export async function generateMatches(tournamentId: string) {
     return { error: "Tournament not found" };
   }
 
-  if (tournament.matches.length > 0) {
+  if (tournament._count.matches > 0) {
     return { error: "Matches already generated" };
   }
 
@@ -62,7 +68,7 @@ export async function generateMatches(tournamentId: string) {
     let globalMatchNumber = 0;
     
     for (const group of qualifyingStage.groups) {
-      const teamIds = group.teams.map((t: Team) => t.id);
+      const teamIds = group.teams.map((t) => t.id);
       const groupMatches = generateRoundRobinMatches(teamIds);
 
       for (const match of groupMatches) {
@@ -80,7 +86,7 @@ export async function generateMatches(tournamentId: string) {
     }
   } else {
     // Generate main draw bracket directly
-    const teamIds = tournament.teams.map((t: Team) => t.id);
+    const teamIds = tournament.teams.map((t) => t.id);
     const bracketMatches = generateBracketMatches(teamIds);
 
     // Batch create all matches at once
@@ -174,12 +180,13 @@ export async function assignMatchToCourt(matchId: string, courtId: string, court
     return { error: "Unauthorized" };
   }
 
+  // Fetch match with minimal needed fields
   const match = await prisma.match.findFirst({
     where: { id: matchId },
-    include: { 
-      tournament: true,
-      homeTeam: true,
-      awayTeam: true,
+    include: {
+      tournament: { select: { id: true, ownerId: true } },
+      homeTeam: { select: { id: true, name: true } },
+      awayTeam: { select: { id: true, name: true } },
     },
   });
 
@@ -191,10 +198,44 @@ export async function assignMatchToCourt(matchId: string, courtId: string, court
     return { error: "Match cannot be assigned" };
   }
 
-  // Validate court number against venue's numCourts
-  const court = await prisma.court.findUnique({
-    where: { id: courtId },
-  });
+  const teamIds = [match.homeTeamId, match.awayTeamId].filter(Boolean) as string[];
+
+  // Run court validation, occupancy check, and team conflict check in parallel
+  const [court, courtOccupied, conflictingMatches] = await Promise.all([
+    prisma.court.findUnique({
+      where: { id: courtId },
+      select: { id: true, name: true, numCourts: true },
+    }),
+    prisma.match.findFirst({
+      where: {
+        courtId,
+        courtNumber,
+        status: { in: ["PENDING", "ON_COURT"] },
+      },
+      select: {
+        id: true,
+        tournamentId: true,
+        tournament: { select: { name: true } },
+      },
+    }),
+    teamIds.length > 0
+      ? prisma.match.findMany({
+          where: {
+            id: { not: matchId },
+            tournamentId: match.tournamentId,
+            courtId: { not: null },
+            status: { in: ["PENDING", "ON_COURT"] },
+            OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }],
+          },
+          select: {
+            status: true,
+            homeTeamId: true,
+            awayTeamId: true,
+            court: { select: { name: true } },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
 
   if (!court) {
     return { error: "Venue not found" };
@@ -204,75 +245,31 @@ export async function assignMatchToCourt(matchId: string, courtId: string, court
     return { error: `Invalid court number. Venue has ${court.numCourts} courts.` };
   }
 
-  // Check if this specific court number is occupied by ANY match (cross-tournament check)
-  const courtOccupied = await prisma.match.findFirst({
-    where: {
-      courtId,
-      courtNumber,
-      status: { in: ["PENDING", "ON_COURT"] },
-    },
-    include: {
-      tournament: {
-        select: { id: true, name: true },
-      },
-    },
-  });
-
   if (courtOccupied) {
     if (courtOccupied.tournamentId === match.tournamentId) {
-      // Same tournament - this is a replacement scenario handled by UI
-      // For direct API call, we'll block it
       return { error: "This court already has a match assigned. Unassign it first." };
-    } else {
-      // Different tournament - cross-tournament conflict
-      return {
-        error: `${court.name} Court #${courtNumber} is being used by "${courtOccupied.tournament.name}". Wait for their match to complete.`,
-      };
     }
+    return {
+      error: `${court.name} Court #${courtNumber} is being used by "${courtOccupied.tournament.name}". Wait for their match to complete.`,
+    };
   }
 
-  // Check if any team in this match is already assigned to a court within the same tournament
-  const teamIds = [match.homeTeamId, match.awayTeamId].filter(Boolean) as string[];
-  
-  if (teamIds.length > 0) {
-    const assignedMatches = await prisma.match.findMany({
-      where: {
-        id: { not: matchId }, // Exclude the current match
-        tournamentId: match.tournamentId,
-        courtId: { not: null }, // Has a court assigned
-        status: { in: ["PENDING", "ON_COURT"] }, // Either scheduled or playing
-        OR: [
-          { homeTeamId: { in: teamIds } },
-          { awayTeamId: { in: teamIds } },
-        ],
-      },
-      include: {
-        homeTeam: true,
-        awayTeam: true,
-        court: true,
-      },
-    });
-
-    if (assignedMatches.length > 0) {
-      // Find which team(s) are already assigned to a court
-      const conflictingTeams: string[] = [];
-      for (const assignedMatch of assignedMatches) {
-        if (match.homeTeamId && (assignedMatch.homeTeamId === match.homeTeamId || assignedMatch.awayTeamId === match.homeTeamId)) {
-          conflictingTeams.push(match.homeTeam?.name || "Home team");
-        }
-        if (match.awayTeamId && (assignedMatch.homeTeamId === match.awayTeamId || assignedMatch.awayTeamId === match.awayTeamId)) {
-          conflictingTeams.push(match.awayTeam?.name || "Away team");
-        }
+  if (conflictingMatches.length > 0) {
+    const conflictingTeams: string[] = [];
+    for (const cm of conflictingMatches) {
+      if (match.homeTeamId && (cm.homeTeamId === match.homeTeamId || cm.awayTeamId === match.homeTeamId)) {
+        conflictingTeams.push(match.homeTeam?.name || "Home team");
       }
-      
-      const uniqueTeams = [...new Set(conflictingTeams)];
-      const courtName = assignedMatches[0].court?.name || "a court";
-      const isPlaying = assignedMatches[0].status === "ON_COURT";
-      
-      return { 
-        error: `${uniqueTeams.join(" and ")} ${uniqueTeams.length > 1 ? "are" : "is"} already ${isPlaying ? "playing" : "assigned"} on ${courtName}. A player cannot be assigned to multiple matches at the same time.` 
-      };
+      if (match.awayTeamId && (cm.homeTeamId === match.awayTeamId || cm.awayTeamId === match.awayTeamId)) {
+        conflictingTeams.push(match.awayTeam?.name || "Away team");
+      }
     }
+    const uniqueTeams = [...new Set(conflictingTeams)];
+    const courtName = conflictingMatches[0].court?.name || "a court";
+    const isPlaying = conflictingMatches[0].status === "ON_COURT";
+    return {
+      error: `${uniqueTeams.join(" and ")} ${uniqueTeams.length > 1 ? "are" : "is"} already ${isPlaying ? "playing" : "assigned"} on ${courtName}. A player cannot be assigned to multiple matches at the same time.`,
+    };
   }
 
   await prisma.match.update({
@@ -292,7 +289,7 @@ export async function unassignMatchFromCourt(matchId: string) {
 
   const match = await prisma.match.findFirst({
     where: { id: matchId },
-    include: { tournament: true },
+    include: { tournament: { select: { id: true, ownerId: true } } },
   });
 
   if (!match || match.tournament.ownerId !== session.user.id) {
@@ -317,17 +314,14 @@ export async function startMatch(matchId: string) {
   
   const match = await prisma.match.findFirst({
     where: { id: matchId },
-    include: { tournament: true },
+    include: { tournament: { select: { id: true, ownerId: true } } },
   });
 
   if (!match) {
     return { error: "Match not found" };
   }
 
-  // Check if user is tournament owner
   const isOwner = session?.user?.id && match.tournament.ownerId === session.user.id;
-  
-  // Check if user is staff with verified access
   let isStaff = false;
   if (!isOwner) {
     const { isTournamentVerified } = await import("@/lib/staff-session");
@@ -365,9 +359,9 @@ export async function completeMatch(
 
   const match = await prisma.match.findFirst({
     where: { id: matchId },
-    include: { 
-      tournament: true,
-      stage: true,
+    include: {
+      tournament: { select: { id: true, ownerId: true } },
+      stage: { select: { id: true, type: true } },
     },
   });
 
@@ -375,10 +369,7 @@ export async function completeMatch(
     return { error: "Match not found" };
   }
 
-  // Check if user is tournament owner
   const isOwner = session?.user?.id && match.tournament.ownerId === session.user.id;
-  
-  // Check if user is staff with verified access
   let isStaff = false;
   if (!isOwner) {
     const { isTournamentVerified } = await import("@/lib/staff-session");
@@ -446,17 +437,15 @@ export async function generateMainDraw(tournamentId: string) {
       stages: {
         include: {
           groups: {
-            include: {
-              teams: true,
-            },
+            select: { id: true, index: true },
             orderBy: { index: "asc" },
           },
-          matches: true,
+          // teamsAdvancing and numGroups live on Stage, not groups
         },
       },
-      matches: {
-        where: {
-          stage: { type: "MAIN" },
+      _count: {
+        select: {
+          matches: { where: { stage: { type: "MAIN" } } },
         },
       },
     },
@@ -473,7 +462,7 @@ export async function generateMainDraw(tournamentId: string) {
     return { error: "Main stage not found" };
   }
 
-  if (tournament.matches.length > 0) {
+  if (tournament._count.matches > 0) {
     return { error: "Main draw already generated" };
   }
 
@@ -629,39 +618,50 @@ export async function generateMainDraw(tournamentId: string) {
  * Uses the tournament's tiebreaker priority setting for ranking teams
  */
 export async function resolveGroupPlaceholders(tournamentId: string) {
-  const tournament = await prisma.tournament.findFirst({
-    where: { id: tournamentId },
-    include: {
-      stages: {
-        include: {
-          groups: {
-            include: {
-              teams: true,
+  // 3 parallel targeted queries instead of one massive tournament fetch
+  const [qualifyingStage, mainStage, tournamentRow] = await Promise.all([
+    prisma.stage.findFirst({
+      where: { tournamentId, type: "QUALIFYING" },
+      select: {
+        id: true,
+        teamsAdvancing: true,
+        groups: {
+          orderBy: { index: "asc" },
+          select: {
+            id: true,
+            teams: { select: { id: true } },
+            matches: {
+              select: {
+                status: true,
+                homeTeamId: true,
+                awayTeamId: true,
+                winnerTeamId: true,
+                homeScore: true,
+                awayScore: true,
+              },
             },
-            orderBy: { index: "asc" },
           },
-          matches: true,
         },
       },
-    },
-  });
+    }),
+    prisma.stage.findFirst({
+      where: { tournamentId, type: "MAIN" },
+      select: { id: true },
+    }),
+    prisma.tournament.findFirst({
+      where: { id: tournamentId },
+      select: { tiebreakerPriority: true },
+    }),
+  ]);
 
-  if (!tournament) return;
+  if (!qualifyingStage || !mainStage || !tournamentRow) return;
 
-  const qualifyingStage = tournament.stages.find((s) => s.type === "QUALIFYING");
-  const mainStage = tournament.stages.find((s) => s.type === "MAIN");
-
-  if (!qualifyingStage || !mainStage) return;
-
-  const qualifyingMatches = qualifyingStage.matches;
-  const tiebreakerPriority = tournament.tiebreakerPriority as TiebreakerPriority;
-
-  // Determine which groups are complete and calculate standings
+  const tiebreakerPriority = tournamentRow.tiebreakerPriority as TiebreakerPriority;
   const teamsAdvancing = qualifyingStage.teamsAdvancing ?? 1;
   const completedGroupStandings: Array<{ groupId: string; rank: number; teamId: string }> = [];
 
   for (const group of qualifyingStage.groups) {
-    const groupMatches = qualifyingMatches.filter((m) => m.groupId === group.id);
+    const groupMatches = group.matches;
     const allCompleted = groupMatches.every((m) => m.status === "COMPLETED");
 
     if (!allCompleted || groupMatches.length === 0) continue;
@@ -689,7 +689,6 @@ export async function resolveGroupPlaceholders(tournamentId: string) {
 
   if (completedGroupStandings.length === 0) return;
 
-  // Fetch all main draw placeholder matches in one query
   const completedGroupIds = [...new Set(completedGroupStandings.map((s) => s.groupId))];
   const allPlaceholderMatches = await prisma.match.findMany({
     where: {
@@ -698,6 +697,13 @@ export async function resolveGroupPlaceholders(tournamentId: string) {
         { homePlaceholderGroupId: { in: completedGroupIds } },
         { awayPlaceholderGroupId: { in: completedGroupIds } },
       ],
+    },
+    select: {
+      id: true,
+      homePlaceholderGroupId: true,
+      homePlaceholderRank: true,
+      awayPlaceholderGroupId: true,
+      awayPlaceholderRank: true,
     },
   });
 
@@ -759,10 +765,16 @@ export async function autoAssignMatches(
       },
       stages: true,
       matches: {
-        include: {
-          homeTeam: true,
-          awayTeam: true,
-          stage: true,
+        select: {
+          id: true,
+          status: true,
+          stageId: true,
+          groupId: true,
+          matchNumber: true,
+          courtId: true,
+          courtNumber: true,
+          homeTeamId: true,
+          awayTeamId: true,
         },
       },
     },

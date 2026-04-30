@@ -40,41 +40,31 @@ export async function getCourts(): Promise<CourtWithUsage[]> {
     orderBy: { name: "asc" },
     include: {
       _count: {
-        select: {
-          tournaments: true,
-          matches: true,
-        },
+        select: { tournaments: true, matches: true },
       },
       tournaments: {
+        // Fetch only 3 for display; total count comes from _count.tournaments
+        take: 3,
         include: {
           tournament: {
-            select: {
-              id: true,
-              name: true,
-              status: true,
-            },
+            select: { id: true, name: true, status: true },
           },
         },
+        orderBy: { createdAt: "desc" },
       },
       matches: {
         where: {
           status: { in: ["ON_COURT", "PENDING"] },
           courtId: { not: null },
         },
-        orderBy: [{ status: "asc" }, { courtNumber: "asc" }], // ON_COURT first, then by court number
-        include: {
-          tournament: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          homeTeam: {
-            select: { name: true },
-          },
-          awayTeam: {
-            select: { name: true },
-          },
+        orderBy: [{ status: "asc" }, { courtNumber: "asc" }],
+        select: {
+          id: true,
+          status: true,
+          courtNumber: true,
+          tournament: { select: { id: true, name: true } },
+          homeTeam: { select: { name: true } },
+          awayTeam: { select: { name: true } },
         },
       },
     },
