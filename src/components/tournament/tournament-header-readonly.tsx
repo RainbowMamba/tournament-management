@@ -86,10 +86,12 @@ export function TournamentHeaderReadonly({ tournament, backUrl = "/guest/tournam
           </div>
         </div>
 
-        <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
-          <Eye className="h-4 w-4" />
-          {tCommon('viewOnly')}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
+            <Eye className="h-4 w-4" />
+            {tCommon('viewOnly')}
+          </Badge>
+        </div>
       </div>
     </div>
   );

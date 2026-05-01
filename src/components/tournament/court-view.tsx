@@ -40,10 +40,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LayoutGrid, Play, AlertCircle, Trophy, X, Minus, Plus, GripVertical, Shuffle, ArrowDownNarrowWide, Lock, PlayCircle, Pencil } from "lucide-react";
+import { LayoutGrid, Play, AlertCircle, Trophy, X, Minus, Plus, GripVertical, Shuffle, ArrowDownNarrowWide, Lock, PlayCircle, Pencil, CalendarClock } from "lucide-react";
 import { assignMatchToCourt, unassignMatchFromCourt, startMatch, startAssignedMatches, completeMatch, autoAssignMatches } from "@/lib/actions/match";
 import { getCourtMatches } from "@/lib/actions/court";
 import { EditMatchResultDialog } from "@/components/tournament/edit-match-result-dialog";
+import { AutoScheduleDialog } from "@/components/tournament/auto-schedule-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -237,6 +238,11 @@ export function CourtView({ tournament }: Props) {
 
   // Bulk start state
   const [isStartingAll, setIsStartingAll] = useState(false);
+
+  // Auto schedule dialog state
+  const [isAutoScheduleOpen, setIsAutoScheduleOpen] = useState(false);
+
+  const isDraft = tournament.status === "DRAFT";
 
   // Configure pointer sensor with activation constraint
   const sensors = useSensors(
@@ -445,6 +451,11 @@ export function CourtView({ tournament }: Props) {
     setActiveMatch(null);
 
     if (!over) return;
+
+    if (isDraft) {
+      toast.error(t('notStartedNotice.toast'));
+      return;
+    }
 
     const draggedMatch = active.data.current?.match as Match | undefined;
     const droppedOnSlot = over.data.current?.slot as CourtSlot | undefined;
@@ -655,6 +666,10 @@ export function CourtView({ tournament }: Props) {
   }
 
   function openAssignDialog(match: Match) {
+    if (isDraft) {
+      toast.error(t('notStartedNotice.toast'));
+      return;
+    }
     setSelectedMatch(match);
     setIsAssigning(true);
   }
@@ -738,6 +753,22 @@ export function CourtView({ tournament }: Props) {
     <TooltipProvider>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="space-y-6">
+          {isDraft && (
+            <Card className="border-amber-500/50 bg-amber-500/5">
+              <CardContent className="flex items-start gap-3 py-4">
+                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-amber-900 dark:text-amber-100">
+                    {t('notStartedNotice.title')}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {t('notStartedNotice.description')}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Stats */}
           <div className="grid gap-4 md:grid-cols-4">
             <Card>
@@ -768,8 +799,17 @@ export function CourtView({ tournament }: Props) {
 
           {/* Venues Grid */}
           <div className="space-y-6">
-            {scheduledMatches.length > 0 && (
-              <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsAutoScheduleOpen(true)}
+                disabled={tournament.matches.length === 0}
+              >
+                <CalendarClock className="h-4 w-4 mr-1" />
+                {t('autoSchedule.button')}
+              </Button>
+              {scheduledMatches.length > 0 && (
                 <Button
                   size="sm"
                   onClick={handleStartAllAssigned}
@@ -780,8 +820,8 @@ export function CourtView({ tournament }: Props) {
                     ? t('startingAll')
                     : t('startAll', { count: scheduledMatches.length })}
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             {tournament.courts.map((venue) => {
               const venueMatches = tournament.matches.filter(
                 (m) => m.courtId === venue.id && m.status !== "COMPLETED"
@@ -879,8 +919,11 @@ export function CourtView({ tournament }: Props) {
                             {displayMatch && !externalMatch && (
                               <div className="space-y-2">
                                 {!isLive && !isOptimistic ? (
-                                  <DraggableMatch match={displayMatch}>
-                                    <div className="p-2 bg-background rounded border cursor-grab active:cursor-grabbing">
+                                  <DraggableMatch match={displayMatch} disabled={isDraft}>
+                                    <div className={cn(
+                                      "p-2 bg-background rounded border",
+                                      isDraft ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
+                                    )}>
                                       <div className="flex items-center justify-between mb-1">
                                         <div className="flex items-center gap-1">
                                           <GripVertical className="h-3 w-3 text-muted-foreground" />
@@ -979,11 +1022,11 @@ export function CourtView({ tournament }: Props) {
                     <h4 className="font-medium text-sm text-muted-foreground">{t('qualifyingRound')}</h4>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => handleAutoAssign("QUALIFYING", "sequential")}
-                        disabled={isAutoAssigning || qualifyingPendingMatches.length === 0}>
+                        disabled={isDraft || isAutoAssigning || qualifyingPendingMatches.length === 0}>
                         <ArrowDownNarrowWide className="h-4 w-4 mr-1" />{t('sequential')}
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => handleAutoAssign("QUALIFYING", "random")}
-                        disabled={isAutoAssigning || qualifyingPendingMatches.length === 0}>
+                        disabled={isDraft || isAutoAssigning || qualifyingPendingMatches.length === 0}>
                         <Shuffle className="h-4 w-4 mr-1" />{t('random')}
                       </Button>
                     </div>
@@ -1000,9 +1043,12 @@ export function CourtView({ tournament }: Props) {
                         <CardContent className="p-2">
                           <div className="space-y-1.5 max-h-64 overflow-y-auto">
                             {group.matches.filter((m) => optimisticAssignment?.matchId !== m.id).map((match) => (
-                              <DraggableMatch key={match.id} match={match}>
-                                <button onClick={() => openAssignDialog(match)}
-                                  className="w-full flex items-center gap-2 p-2 border rounded hover:bg-secondary/50 cursor-grab text-left text-sm">
+                              <DraggableMatch key={match.id} match={match} disabled={isDraft}>
+                                <button onClick={() => openAssignDialog(match)} disabled={isDraft}
+                                  className={cn(
+                                    "w-full flex items-center gap-2 p-2 border rounded text-left text-sm",
+                                    isDraft ? "cursor-not-allowed opacity-60" : "hover:bg-secondary/50 cursor-grab"
+                                  )}>
                                   <GripVertical className="h-4 w-4 text-muted-foreground" />
                                   <Badge variant="outline" className="text-xs">#{match.matchNumber}</Badge>
                                   <div className="truncate flex-1">
@@ -1028,11 +1074,11 @@ export function CourtView({ tournament }: Props) {
                     <h4 className="font-medium text-sm text-muted-foreground">{t('mainDraw')}</h4>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => handleAutoAssign("MAIN", "sequential")}
-                        disabled={isAutoAssigning || mainDrawPendingMatches.length === 0}>
+                        disabled={isDraft || isAutoAssigning || mainDrawPendingMatches.length === 0}>
                         <ArrowDownNarrowWide className="h-4 w-4 mr-1" />{t('sequential')}
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => handleAutoAssign("MAIN", "random")}
-                        disabled={isAutoAssigning || mainDrawPendingMatches.length === 0}>
+                        disabled={isDraft || isAutoAssigning || mainDrawPendingMatches.length === 0}>
                         <Shuffle className="h-4 w-4 mr-1" />{t('random')}
                       </Button>
                     </div>
@@ -1047,9 +1093,12 @@ export function CourtView({ tournament }: Props) {
                     <CardContent className="p-3">
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {ungroupedMatches.filter((m) => optimisticAssignment?.matchId !== m.id).map((match) => (
-                          <DraggableMatch key={match.id} match={match}>
-                            <button onClick={() => openAssignDialog(match)}
-                              className="w-full flex items-center gap-2 p-2.5 border rounded hover:bg-secondary/50 cursor-grab text-left text-sm">
+                          <DraggableMatch key={match.id} match={match} disabled={isDraft}>
+                            <button onClick={() => openAssignDialog(match)} disabled={isDraft}
+                              className={cn(
+                                "w-full flex items-center gap-2 p-2.5 border rounded text-left text-sm",
+                                isDraft ? "cursor-not-allowed opacity-60" : "hover:bg-secondary/50 cursor-grab"
+                              )}>
                               <GripVertical className="h-4 w-4 text-muted-foreground" />
                               <Badge variant="outline" className="text-xs">{getShortRoundLabel(match)}</Badge>
                               <div className="truncate flex-1">
@@ -1299,6 +1348,15 @@ export function CourtView({ tournament }: Props) {
             onSuccess={handleEditSuccess}
           />
         )}
+
+        <AutoScheduleDialog
+          open={isAutoScheduleOpen}
+          onOpenChange={setIsAutoScheduleOpen}
+          tournamentId={tournament.id}
+          venues={tournament.courts.map((c) => ({ id: c.id, name: c.name, numCourts: c.numCourts }))}
+          hasQualifying={tournament.stages.some((s) => s.type === "QUALIFYING")}
+          hasMain={tournament.stages.some((s) => s.type === "MAIN")}
+        />
       </DndContext>
     </TooltipProvider>
   );

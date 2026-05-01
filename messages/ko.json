@@ -144,7 +144,8 @@
     },
     "tabs": {
       "courtView": "코트 보기",
-      "drawView": "대진표 보기"
+      "drawView": "대진표 보기",
+      "timelineView": "시간표 보기"
     },
     "create": {
       "title": "토너먼트 생성",
@@ -367,6 +368,11 @@
     "startingAll": "시작하는 중...",
     "startedCount": "{count}개 경기를 시작했습니다",
     "noMatchesToStart": "시작할 배정된 경기가 없습니다",
+    "notStartedNotice": {
+      "title": "토너먼트가 아직 시작되지 않았습니다",
+      "description": "토너먼트 시작 전에는 경기를 코트에 배정할 수 없습니다. 상단의 '토너먼트 시작' 버튼을 눌러 시작해 주세요.",
+      "toast": "토너먼트를 먼저 시작해 주세요. 시작 전에는 경기를 코트에 배정할 수 없습니다."
+    },
     "assignMatch": {
       "title": "경기를 코트에 배정",
       "selectCourt": "코트 선택",
@@ -393,6 +399,46 @@
       "unassigned": "코트에서 경기가 배정 해제되었습니다",
       "started": "경기가 시작되었습니다!",
       "completed": "경기가 완료되었습니다!"
+    },
+    "autoSchedule": {
+      "button": "자동 시간표",
+      "title": "초기 시간표 생성",
+      "description": "배정되지 않은 모든 경기를 코트와 시간 슬롯에 자동으로 배정합니다. 이미 진행 중이거나 완료된 경기는 영향받지 않습니다.",
+      "qualifyingStart": "예선 시작 시간",
+      "qualifyingDuration": "예선 경기 시간 (분)",
+      "mainAfterQualifying": "예선 종료 직후 본선 시작",
+      "mainStart": "본선 시작 시간",
+      "mainDuration": "본선 경기 시간 (분)",
+      "courtsToUse": "사용할 코트",
+      "totalCourts": "총 {count}개",
+      "rangeHelper": "{count}개 코트 선택",
+      "totalSelected": "총 선택: {count}개 코트",
+      "noCourtsSelected": "최소 1개 이상의 코트를 선택하세요",
+      "invalidDuration": "경기 시간은 0보다 커야 합니다",
+      "overwriteWarning": "참고: 기존에 배정된 미진행 경기는 다시 배정됩니다. 진행 중이거나 완료된 경기는 그대로 유지됩니다.",
+      "submit": "시간표 생성",
+      "generating": "생성 중...",
+      "successToast": "{count}개 경기 시간표가 생성되었습니다"
+    },
+    "timeline": {
+      "openButton": "시간표 보기",
+      "subtitle": "초기 코트 시간표입니다. 토너먼트 진행 중 변경사항은 반영되지 않습니다.",
+      "backToTournament": "토너먼트로 돌아가기",
+      "downloadPng": "이미지로 다운로드",
+      "downloading": "다운로드 중...",
+      "downloadError": "이미지 다운로드에 실패했습니다",
+      "timeHeader": "시간",
+      "captionTitle": "코트 시간표",
+      "legendQualifying": "예선",
+      "legendMain": "본선",
+      "winnerOf": "{label} 승자",
+      "groupMatchLabel": "{group}조 #{index}",
+      "dragHint": "경기 셀을 드래그해서 이동하거나 교체하세요.",
+      "moved": "경기가 이동되었습니다",
+      "swapped": "경기가 교체되었습니다",
+      "changeNotice": "시간표는 변동될 수 있으니 꼭 공지방을 참고해 주세요.",
+      "empty": "아직 시간표가 생성되지 않았습니다",
+      "emptyDescription": "코트 뷰에서 \"자동 시간표\"를 눌러 초기 시간표를 생성하세요."
     }
   },
   "drawView": {

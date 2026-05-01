@@ -144,7 +144,8 @@
     },
     "tabs": {
       "courtView": "Court View",
-      "drawView": "Draw View"
+      "drawView": "Draw View",
+      "timelineView": "Timeline View"
     },
     "create": {
       "title": "Create Tournament",
@@ -367,6 +368,11 @@
     "startingAll": "Starting...",
     "startedCount": "Started {count, plural, one {# match} other {# matches}}",
     "noMatchesToStart": "No assigned matches to start",
+    "notStartedNotice": {
+      "title": "Tournament has not started yet",
+      "description": "Matches cannot be assigned to courts until the tournament has started. Click the 'Start Tournament' button at the top to begin.",
+      "toast": "Please start the tournament first. Matches cannot be assigned to courts before it starts."
+    },
     "assignMatch": {
       "title": "Assign Match to Court",
       "selectCourt": "Select a court",
@@ -393,6 +399,46 @@
       "unassigned": "Match unassigned from court",
       "started": "Match started!",
       "completed": "Match completed!"
+    },
+    "autoSchedule": {
+      "button": "Auto Schedule",
+      "title": "Generate Initial Schedule",
+      "description": "Automatically assign all pending matches to courts and time slots. Matches already on court or completed are not affected.",
+      "qualifyingStart": "Qualifying start time",
+      "qualifyingDuration": "Qualifying match duration (minutes)",
+      "mainAfterQualifying": "Start main draw right after qualifying ends",
+      "mainStart": "Main draw start time",
+      "mainDuration": "Main draw match duration (minutes)",
+      "courtsToUse": "Courts to use",
+      "totalCourts": "{count} courts",
+      "rangeHelper": "{count, plural, one {# court} other {# courts}} selected",
+      "totalSelected": "Total: {count, plural, one {# court} other {# courts}}",
+      "noCourtsSelected": "Please select at least one court",
+      "invalidDuration": "Match duration must be greater than 0",
+      "overwriteWarning": "Note: Existing pending court assignments will be replaced. Matches already on court or completed are kept.",
+      "submit": "Generate Schedule",
+      "generating": "Generating...",
+      "successToast": "Schedule generated for {count, plural, one {# match} other {# matches}}"
+    },
+    "timeline": {
+      "openButton": "Timeline",
+      "subtitle": "Initial court schedule. Edits during the tournament are not reflected here.",
+      "backToTournament": "Back to Tournament",
+      "downloadPng": "Download as Image",
+      "downloading": "Downloading...",
+      "downloadError": "Could not download image",
+      "timeHeader": "Time",
+      "captionTitle": "Court Schedule",
+      "legendQualifying": "Qualifying",
+      "legendMain": "Main Draw",
+      "winnerOf": "Winner of {label}",
+      "groupMatchLabel": "Group {group} #{index}",
+      "dragHint": "Drag a match cell to move or swap it.",
+      "moved": "Match moved",
+      "swapped": "Matches swapped",
+      "changeNotice": "The schedule may change. Please check the announcement channel for the latest updates.",
+      "empty": "No schedule generated yet",
+      "emptyDescription": "Use \"Auto Schedule\" on the court view to generate an initial schedule."
     }
   },
   "drawView": {

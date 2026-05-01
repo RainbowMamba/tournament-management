@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPublicTournament } from "@/lib/actions/tournament";
 import { TournamentHeaderReadonly } from "@/components/tournament/tournament-header-readonly";
 import { TournamentTabsReadonly } from "@/components/tournament/tournament-tabs-readonly";
+import { buildScheduledMatchesForTimeline } from "@/lib/tournament/timeline-data";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -15,11 +16,15 @@ export default async function GuestTournamentPage({ params }: Props) {
     notFound();
   }
 
+  const scheduledMatches = buildScheduledMatchesForTimeline(
+    tournament.stages,
+    tournament.matches,
+  );
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-8">
       <TournamentHeaderReadonly tournament={tournament} />
-      <TournamentTabsReadonly tournament={tournament} />
+      <TournamentTabsReadonly tournament={tournament} scheduledMatches={scheduledMatches} />
     </div>
   );
 }
-

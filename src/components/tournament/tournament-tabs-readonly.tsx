@@ -5,7 +5,9 @@ import { useTranslations } from "next-intl";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CourtViewReadonly } from "./court-view-readonly";
 import { DrawViewReadonly } from "./draw-view-readonly";
-import { LayoutGrid, Trophy } from "lucide-react";
+import { TimelineView } from "./timeline-view";
+import { LayoutGrid, Trophy, CalendarDays } from "lucide-react";
+import type { TimelineScheduledMatch } from "@/lib/tournament/timeline-data";
 
 type TournamentWithRelations = {
   id: string;
@@ -73,9 +75,10 @@ type TournamentWithRelations = {
 
 type Props = {
   tournament: TournamentWithRelations;
+  scheduledMatches: TimelineScheduledMatch[];
 };
 
-export function TournamentTabsReadonly({ tournament }: Props) {
+export function TournamentTabsReadonly({ tournament, scheduledMatches }: Props) {
   const [activeTab, setActiveTab] = useState("court");
   const t = useTranslations('tournaments.tabs');
 
@@ -89,9 +92,11 @@ export function TournamentTabsReadonly({ tournament }: Props) {
   // Lift draw view stage state to parent so it persists across tab switches
   const [drawStage, setDrawStage] = useState<"qualifying" | "main">(initialDrawStage);
 
+  const hasTimeline = scheduledMatches.length > 0;
+
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-      <TabsList className="w-full max-w-md">
+      <TabsList className={hasTimeline ? "w-full max-w-xl" : "w-full max-w-md"}>
         <TabsTrigger value="court">
           <LayoutGrid className="h-4 w-4" />
           {t('courtView')}
@@ -100,6 +105,12 @@ export function TournamentTabsReadonly({ tournament }: Props) {
           <Trophy className="h-4 w-4" />
           {t('drawView')}
         </TabsTrigger>
+        {hasTimeline && (
+          <TabsTrigger value="timeline">
+            <CalendarDays className="h-4 w-4" />
+            {t('timelineView')}
+          </TabsTrigger>
+        )}
       </TabsList>
 
       <TabsContent value="court">
@@ -113,6 +124,22 @@ export function TournamentTabsReadonly({ tournament }: Props) {
           onStageChange={setDrawStage}
         />
       </TabsContent>
+
+      {hasTimeline && (
+        <TabsContent value="timeline">
+          <TimelineView
+            tournamentId={tournament.id}
+            tournamentName={tournament.name}
+            venues={tournament.courts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              numCourts: c.numCourts,
+            }))}
+            scheduledMatches={scheduledMatches}
+            readonly
+          />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }

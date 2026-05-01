@@ -10,7 +10,18 @@
       "Bash(npm install:*)",
       "Bash(mkdir:*)",
       "Bash(npm run build:*)",
-      "Bash(npx prisma generate:*)"
+      "Bash(npx prisma generate:*)",
+      "Bash(npx eslint *)",
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(ssh -i *)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code} -> %{redirect_url}\\\\n' http://13.124.235.214/)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code} -> %{redirect_url}\\\\n' http://13-124-235-214.sslip.io/)",
+      "Bash(curl -s -o /dev/null -w 'HTTPS %{http_code}\\\\n' https://13-124-235-214.sslip.io/)",
+      "Bash(curl -sL -o /dev/null -w 'final HTTP %{http_code} | url=%{url_effective}\\\\n' http://13.124.235.214/)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git add *)"
     ]
   }
 }

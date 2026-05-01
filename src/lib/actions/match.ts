@@ -182,7 +182,7 @@ export async function assignMatchToCourt(matchId: string, courtId: string, court
   const match = await prisma.match.findFirst({
     where: { id: matchId },
     include: {
-      tournament: { select: { id: true, ownerId: true } },
+      tournament: { select: { id: true, ownerId: true, status: true } },
       homeTeam: { select: { id: true, name: true } },
       awayTeam: { select: { id: true, name: true } },
     },
@@ -190,6 +190,10 @@ export async function assignMatchToCourt(matchId: string, courtId: string, court
 
   if (!match || match.tournament.ownerId !== session.user.id) {
     return { error: "Match not found" };
+  }
+
+  if (match.tournament.status === "DRAFT") {
+    return { error: "Tournament must be started before assigning matches to courts" };
   }
 
   // Court validation outside tx (court structure doesn't change during assignment)
@@ -814,6 +818,10 @@ export async function autoAssignMatches(
 
   if (!tournament) {
     return { error: "Tournament not found" };
+  }
+
+  if (tournament.status === "DRAFT") {
+    return { error: "Tournament must be started before assigning matches to courts" };
   }
 
   const tournamentCourts = tournament.tournamentCourts.map((tc) => tc.court);

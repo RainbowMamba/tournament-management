@@ -188,6 +188,17 @@ export function TournamentHeader({ tournament }: Props) {
             </Button>
           )}
 
+          {tournament.status === "DRAFT" && (
+            <Button
+              onClick={() => handleStatusChange("ACTIVE")}
+              size="lg"
+              className="shadow-md"
+            >
+              <Play className="mr-2 h-4 w-4 fill-current" />
+              {tHeader('startTournament')}
+            </Button>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon">
@@ -195,12 +206,6 @@ export function TournamentHeader({ tournament }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {tournament.status === "DRAFT" && (
-                <DropdownMenuItem onClick={() => handleStatusChange("ACTIVE")}>
-                  <Play className="mr-2 h-4 w-4" />
-                  {tHeader('startTournament')}
-                </DropdownMenuItem>
-              )}
               {tournament.status === "ACTIVE" && (
                 <>
                   <DropdownMenuItem onClick={() => handleStatusChange("COMPLETED")}>
