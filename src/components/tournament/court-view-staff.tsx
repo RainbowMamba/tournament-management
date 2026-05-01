@@ -99,7 +99,9 @@ export function CourtViewStaff({ tournament }: Props) {
     (m) => m.status === "PENDING" && m.courtId
   );
   const onCourtMatches = tournament.matches.filter((m) => m.status === "ON_COURT");
-  const completedMatches = tournament.matches.filter((m) => m.status === "COMPLETED");
+  const completedMatches = tournament.matches.filter(
+    (m) => m.status === "COMPLETED" && m.homeTeamId && m.awayTeamId
+  );
 
   // Build a map from groupId to group info
   const groupMap = new Map<string, { name: string; stageName: string }>();

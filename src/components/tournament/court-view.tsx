@@ -305,7 +305,9 @@ export function CourtView({ tournament }: Props) {
     (m) => m.status === "PENDING" && m.courtId
   );
   const onCourtMatches = tournament.matches.filter((m) => m.status === "ON_COURT");
-  const completedMatches = tournament.matches.filter((m) => m.status === "COMPLETED");
+  const completedMatches = tournament.matches.filter(
+    (m) => m.status === "COMPLETED" && m.homeTeamId && m.awayTeamId
+  );
 
   // Check if a court slot is blocked by another tournament
   function getExternalMatchOnSlot(venueId: string, courtNumber: number): CrossTournamentMatch | undefined {
