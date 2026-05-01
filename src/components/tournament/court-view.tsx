@@ -321,6 +321,18 @@ export function CourtView({ tournament }: Props) {
     );
   }
 
+  // PENDING matches currently displayed on a court slot (one per slot).
+  // Scheduled matches queued for future timeslots on the same slot are excluded.
+  const startableMatches: Match[] = [];
+  for (const venue of tournament.courts) {
+    for (let n = 1; n <= venue.numCourts; n++) {
+      const m = getOurMatchOnSlot(venue.id, n);
+      if (m && m.status === "PENDING" && m.homeTeamId && m.awayTeamId) {
+        startableMatches.push(m);
+      }
+    }
+  }
+
   // Helper function to get teams that are assigned to a court (playing or scheduled)
   function getTeamsAssignedToCourt(): Set<string> {
     const teamsAssigned = new Set<string>();
@@ -809,7 +821,7 @@ export function CourtView({ tournament }: Props) {
                 <CalendarClock className="h-4 w-4 mr-1" />
                 {t('autoSchedule.button')}
               </Button>
-              {scheduledMatches.length > 0 && (
+              {startableMatches.length > 0 && (
                 <Button
                   size="sm"
                   onClick={handleStartAllAssigned}
@@ -818,7 +830,7 @@ export function CourtView({ tournament }: Props) {
                   <PlayCircle className="h-4 w-4 mr-1" />
                   {isStartingAll
                     ? t('startingAll')
-                    : t('startAll', { count: scheduledMatches.length })}
+                    : t('startAll', { count: startableMatches.length })}
                 </Button>
               )}
             </div>

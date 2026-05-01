@@ -33,6 +33,7 @@ type ScheduledMatch = {
   scheduledAt: string;
   courtId: string;
   courtNumber: number;
+  status: "PENDING" | "ON_COURT" | "COMPLETED";
   stageType: "QUALIFYING" | "MAIN";
   round: number;
   matchNumber: number;
@@ -140,12 +141,14 @@ function DroppableCell({
   cellKey,
   match,
   isMain,
+  isCompleted,
   isDragOrigin,
   children,
 }: {
   cellKey: string;
   match: ScheduledMatch | null;
   isMain: boolean;
+  isCompleted: boolean;
   isDragOrigin: boolean;
   children: React.ReactNode;
 }) {
@@ -156,8 +159,9 @@ function DroppableCell({
       className={cn(
         "border px-3 py-2 align-top transition-colors",
         match && "min-w-[180px]",
-        match && isMain && "bg-primary/5",
-        match && !isMain && "bg-amber-500/5",
+        match && isCompleted && "bg-muted/40 text-muted-foreground",
+        match && !isCompleted && isMain && "bg-primary/5",
+        match && !isCompleted && !isMain && "bg-amber-500/5",
         !match && "text-center text-muted-foreground min-w-[120px]",
         isOver && !isDragOrigin && "ring-2 ring-primary/50 bg-primary/10",
         isDragOrigin && "opacity-30",
@@ -175,17 +179,22 @@ function DraggableMatchCell({
   match: ScheduledMatch;
   children: React.ReactNode;
 }) {
+  const isCompleted = match.status === "COMPLETED";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `match:${match.id}`,
     data: { match },
+    disabled: isCompleted,
   });
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
+      {...(isCompleted ? {} : listeners)}
       {...attributes}
       suppressHydrationWarning
-      className={cn("cursor-grab active:cursor-grabbing", isDragging && "opacity-30")}
+      className={cn(
+        !isCompleted && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-30",
+      )}
     >
       {children}
     </div>
@@ -324,6 +333,7 @@ export function TimelineView({ tournamentId, tournamentName, venues, scheduledMa
     const cellKey = `${col.courtId}:${col.courtNumber}:${time}`;
     const match = matchByCell.get(cellKey) ?? null;
     const isMain = match?.stageType === "MAIN";
+    const isCompleted = match?.status === "COMPLETED";
     const isDragOrigin = !readonly && activeDragMatch?.id === match?.id && match !== null;
 
     if (readonly) {
@@ -333,8 +343,9 @@ export function TimelineView({ tournamentId, tournamentName, venues, scheduledMa
           className={cn(
             "border px-3 py-2 align-top",
             match && "min-w-[180px]",
-            match && isMain && "bg-primary/5",
-            match && !isMain && "bg-amber-500/5",
+            match && isCompleted && "bg-muted/40 text-muted-foreground",
+            match && !isCompleted && isMain && "bg-primary/5",
+            match && !isCompleted && !isMain && "bg-amber-500/5",
             !match && "text-center text-muted-foreground min-w-[120px]",
           )}
         >
@@ -353,11 +364,17 @@ export function TimelineView({ tournamentId, tournamentName, venues, scheduledMa
         cellKey={cellKey}
         match={match}
         isMain={isMain}
+        isCompleted={isCompleted}
         isDragOrigin={isDragOrigin}
       >
         {match ? (
           <DraggableMatchCell match={match}>
-            <MatchCellContent match={match} t={t} tCommon={tCommon} showHandle />
+            <MatchCellContent
+              match={match}
+              t={t}
+              tCommon={tCommon}
+              showHandle={!isCompleted}
+            />
           </DraggableMatchCell>
         ) : (
           <span>—</span>

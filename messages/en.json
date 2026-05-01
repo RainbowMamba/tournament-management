@@ -418,7 +418,23 @@
       "overwriteWarning": "Note: Existing pending court assignments will be replaced. Matches already on court or completed are kept.",
       "submit": "Generate Schedule",
       "generating": "Generating...",
-      "successToast": "Schedule generated for {count, plural, one {# match} other {# matches}}"
+      "successToast": "Schedule generated for {count, plural, one {# match} other {# matches}}",
+      "courtStrategyLabel": "Qualifying court assignment",
+      "courtStrategy": {
+        "any": "Auto (earliest free court)",
+        "groupStick": "Prefer same court per group",
+        "anyHint": "Place each match on the earliest available court.",
+        "groupStickHint": "Pin each group to a preferred court (groups wrap around courts when there are more groups than courts). Falls back to another free court so no court sits idle."
+      },
+      "timeStrategyLabel": "Qualifying time distribution",
+      "timeStrategy": {
+        "any": "Auto",
+        "consecutive": "Group matches back-to-back",
+        "distributed": "Spread group matches apart",
+        "anyHint": "Default ordering.",
+        "consecutiveHint": "Schedule each group's matches close together in time.",
+        "distributedHint": "Maximize the gap between matches of the same group (more rest for teams)."
+      }
     },
     "timeline": {
       "openButton": "Timeline",

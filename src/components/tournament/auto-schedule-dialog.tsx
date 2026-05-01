@@ -15,8 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { generateInitialCourtSchedule } from "@/lib/actions/schedule";
+import type {
+  QualifyingCourtStrategy,
+  QualifyingTimeStrategy,
+} from "@/lib/tournament/schedule";
 
 type Venue = {
   id: string;
@@ -59,6 +64,8 @@ export function AutoScheduleDialog({
   const [mainAfterQualifying, setMainAfterQualifying] = useState<boolean>(true);
   const [qualifyingDuration, setQualifyingDuration] = useState<number>(30);
   const [mainDuration, setMainDuration] = useState<number>(45);
+  const [courtStrategy, setCourtStrategy] = useState<QualifyingCourtStrategy>("any");
+  const [timeStrategy, setTimeStrategy] = useState<QualifyingTimeStrategy>("any");
 
   // Per-venue court range selection (1..numCourts by default)
   const [courtRanges, setCourtRanges] = useState<Record<string, { from: number; to: number }>>(
@@ -102,6 +109,9 @@ export function AutoScheduleDialog({
       mainStartTime: hasMain && !mainAfterQualifying ? mainStart : null,
       mainDurationMin: mainDuration,
       selectedCourts,
+      qualifyingOptions: hasQualifying
+        ? { courtStrategy, timeStrategy }
+        : undefined,
     });
     setSubmitting(false);
 
@@ -145,6 +155,55 @@ export function AutoScheduleDialog({
                 value={qualifyingDuration}
                 onChange={(e) => setQualifyingDuration(parseInt(e.target.value) || 0)}
               />
+            </div>
+          )}
+
+          {hasQualifying && (
+            <div className="space-y-2">
+              <Label htmlFor="courtStrategy">{t("courtStrategyLabel")}</Label>
+              <Select
+                value={courtStrategy}
+                onValueChange={(v) => setCourtStrategy(v as QualifyingCourtStrategy)}
+              >
+                <SelectTrigger id="courtStrategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">{t("courtStrategy.any")}</SelectItem>
+                  <SelectItem value="group-stick">{t("courtStrategy.groupStick")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {courtStrategy === "group-stick"
+                  ? t("courtStrategy.groupStickHint")
+                  : t("courtStrategy.anyHint")}
+              </p>
+            </div>
+          )}
+
+          {hasQualifying && (
+            <div className="space-y-2">
+              <Label htmlFor="timeStrategy">{t("timeStrategyLabel")}</Label>
+              <Select
+                value={timeStrategy}
+                onValueChange={(v) => setTimeStrategy(v as QualifyingTimeStrategy)}
+              >
+                <SelectTrigger id="timeStrategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">{t("timeStrategy.any")}</SelectItem>
+                  <SelectItem value="consecutive">{t("timeStrategy.consecutive")}</SelectItem>
+                  <SelectItem value="distributed">{t("timeStrategy.distributed")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {timeStrategy === "consecutive"
+                  ? t("timeStrategy.consecutiveHint")
+                  : timeStrategy === "distributed"
+                    ? t("timeStrategy.distributedHint")
+                    : t("timeStrategy.anyHint")}
+              </p>
             </div>
           )}
 

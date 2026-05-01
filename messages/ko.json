@@ -418,7 +418,23 @@
       "overwriteWarning": "참고: 기존에 배정된 미진행 경기는 다시 배정됩니다. 진행 중이거나 완료된 경기는 그대로 유지됩니다.",
       "submit": "시간표 생성",
       "generating": "생성 중...",
-      "successToast": "{count}개 경기 시간표가 생성되었습니다"
+      "successToast": "{count}개 경기 시간표가 생성되었습니다",
+      "courtStrategyLabel": "예선 코트 배정 방식",
+      "courtStrategy": {
+        "any": "자동 (가장 빠른 빈 코트)",
+        "groupStick": "조별 같은 코트 우선",
+        "anyHint": "각 경기를 가능한 빠른 빈 코트에 배정합니다.",
+        "groupStickHint": "각 조에 우선 코트를 정해 같은 코트에 몰아 배정합니다 (조 수 > 코트 수면 한 코트가 여러 조를 순차로 처리). 빈 코트가 생기지 않도록 다른 코트로 폴백할 수 있습니다."
+      },
+      "timeStrategyLabel": "예선 시간 분포 방식",
+      "timeStrategy": {
+        "any": "자동",
+        "consecutive": "같은 조 경기 연속",
+        "distributed": "같은 조 경기 분산",
+        "anyHint": "기본 순서대로 배정합니다.",
+        "consecutiveHint": "같은 조의 경기들을 시간상 가까이 모아서 배정합니다.",
+        "distributedHint": "같은 조의 경기들 사이 간격을 최대한 벌려 배정합니다 (팀 휴식 시간 확보)."
+      }
     },
     "timeline": {
       "openButton": "시간표 보기",

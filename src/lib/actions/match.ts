@@ -393,14 +393,39 @@ export async function startAssignedMatches(tournamentId: string) {
     return { error: "Unauthorized" };
   }
 
-  const updated = await prisma.match.updateMany({
+  // A court slot may have multiple matches assigned across different timeslots
+  // (via auto-schedule). Only the first match per (courtId, courtNumber) is shown
+  // on the court view; queued matches for future slots should not start. Match
+  // ordering here mirrors the client display logic (round, then matchNumber).
+  // If a slot already has an ON_COURT match, no PENDING match starts on it.
+  const candidates = await prisma.match.findMany({
     where: {
       tournamentId,
-      status: "PENDING",
+      status: { in: ["PENDING", "ON_COURT"] },
       courtId: { not: null },
+      courtNumber: { not: null },
       homeTeamId: { not: null },
       awayTeamId: { not: null },
     },
+    orderBy: [{ round: "asc" }, { matchNumber: "asc" }],
+    select: { id: true, courtId: true, courtNumber: true, status: true },
+  });
+
+  const seenSlots = new Set<string>();
+  const toStartIds: string[] = [];
+  for (const m of candidates) {
+    const key = `${m.courtId}:${m.courtNumber}`;
+    if (seenSlots.has(key)) continue;
+    seenSlots.add(key);
+    if (m.status === "PENDING") toStartIds.push(m.id);
+  }
+
+  if (toStartIds.length === 0) {
+    return { success: true, startedCount: 0 };
+  }
+
+  const updated = await prisma.match.updateMany({
+    where: { id: { in: toStartIds }, status: "PENDING" },
     data: { status: "ON_COURT" },
   });
 

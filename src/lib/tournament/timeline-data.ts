@@ -10,11 +10,12 @@ type MatchLike = {
   id: string;
   round: number;
   matchNumber: number;
+  status: "PENDING" | "ON_COURT" | "COMPLETED";
   stageId: string;
   groupId: string | null;
   scheduledAt: Date | null;
-  courtId: string | null;
-  courtNumber: number | null;
+  scheduledCourtId: string | null;
+  scheduledCourtNumber: number | null;
   nextMatchId: string | null;
   nextMatchSlot: number | null;
   homeTeam: { id: string; name: string } | null;
@@ -30,6 +31,7 @@ export type TimelineScheduledMatch = {
   scheduledAt: string;
   courtId: string;
   courtNumber: number;
+  status: "PENDING" | "ON_COURT" | "COMPLETED";
   stageType: "QUALIFYING" | "MAIN";
   round: number;
   matchNumber: number;
@@ -83,14 +85,15 @@ export function buildScheduledMatchesForTimeline(
   }
 
   return matches
-    .filter((m) => m.scheduledAt && m.courtId && m.courtNumber !== null)
+    .filter((m) => m.scheduledAt && m.scheduledCourtId && m.scheduledCourtNumber !== null)
     .map((m) => {
       const feeders = feederByTarget.get(m.id);
       return {
         id: m.id,
         scheduledAt: m.scheduledAt!.toISOString(),
-        courtId: m.courtId!,
-        courtNumber: m.courtNumber!,
+        courtId: m.scheduledCourtId!,
+        courtNumber: m.scheduledCourtNumber!,
+        status: m.status,
         stageType: stageById.get(m.stageId) ?? "MAIN",
         round: m.round,
         matchNumber: m.matchNumber,

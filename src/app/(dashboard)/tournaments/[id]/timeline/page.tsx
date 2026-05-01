@@ -59,14 +59,15 @@ export default async function TournamentTimelinePage({ params }: Props) {
   }
 
   const scheduledMatches = tournament.matches
-    .filter((m) => m.scheduledAt && m.courtId && m.courtNumber !== null)
+    .filter((m) => m.scheduledAt && m.scheduledCourtId && m.scheduledCourtNumber !== null)
     .map((m) => {
       const feeders = feederByTarget.get(m.id);
       return {
         id: m.id,
         scheduledAt: m.scheduledAt!.toISOString(),
-        courtId: m.courtId!,
-        courtNumber: m.courtNumber!,
+        courtId: m.scheduledCourtId!,
+        courtNumber: m.scheduledCourtNumber!,
+        status: m.status,
         stageType: stageById.get(m.stageId) ?? "MAIN",
         round: m.round,
         matchNumber: m.matchNumber,

@@ -4,7 +4,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { generateInitialSchedule, type CourtSlot, type ScheduleInputMatch } from "@/lib/tournament/schedule";
+import {
+  generateInitialSchedule,
+  type CourtSlot,
+  type QualifyingOptions,
+  type ScheduleInputMatch,
+} from "@/lib/tournament/schedule";
 
 function isSerializationError(e: unknown): boolean {
   return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034";
@@ -20,6 +25,8 @@ export type GenerateInitialCourtScheduleInput = {
   mainDurationMin: number;
   // Subset of tournament's court slots to use
   selectedCourts: CourtSlot[];
+  // Optional preferences applied to qualifying matches only.
+  qualifyingOptions?: QualifyingOptions;
 };
 
 export async function generateInitialCourtSchedule(input: GenerateInitialCourtScheduleInput) {
@@ -51,6 +58,8 @@ export async function generateInitialCourtSchedule(input: GenerateInitialCourtSc
           homeTeamId: true,
           awayTeamId: true,
           nextMatchId: true,
+          groupId: true,
+          group: { select: { name: true } },
         },
       },
     },
@@ -92,6 +101,8 @@ export async function generateInitialCourtSchedule(input: GenerateInitialCourtSc
     homeTeamId: m.homeTeamId,
     awayTeamId: m.awayTeamId,
     nextMatchId: m.nextMatchId,
+    groupId: m.groupId,
+    groupName: m.group?.name ?? null,
   }));
 
   const qualifyingStart = input.qualifyingStartTime ? new Date(input.qualifyingStartTime) : null;
@@ -112,6 +123,7 @@ export async function generateInitialCourtSchedule(input: GenerateInitialCourtSc
     courts: input.selectedCourts,
     qualifyingStartTime: qualifyingStart,
     qualifyingDurationMin: input.qualifyingDurationMin,
+    qualifyingOptions: input.qualifyingOptions,
     mainStartTime: mainStart,
     mainDurationMin: input.mainDurationMin,
   });
@@ -121,15 +133,19 @@ export async function generateInitialCourtSchedule(input: GenerateInitialCourtSc
   }
 
   // Apply: clear existing schedule on PENDING matches, then write new assignments.
-  // Wrapped in a serializable transaction so concurrent assignments don't race.
+  // Only the schedule-only fields are touched. Live courtId/courtNumber and
+  // status are independent — the timetable does not shift when matches start
+  // or finish, and starting/completing a match does not edit the schedule.
   try {
     await prisma.$transaction(
       async (tx) => {
-        // Clear scheduledAt + courtId/courtNumber on all PENDING matches in this tournament.
-        // (ON_COURT/COMPLETED matches remain untouched — preserves in-progress work.)
         await tx.match.updateMany({
           where: { tournamentId: input.tournamentId, status: "PENDING" },
-          data: { scheduledAt: null, courtId: null, courtNumber: null },
+          data: {
+            scheduledAt: null,
+            scheduledCourtId: null,
+            scheduledCourtNumber: null,
+          },
         });
 
         for (const a of result.assignments) {
@@ -137,8 +153,8 @@ export async function generateInitialCourtSchedule(input: GenerateInitialCourtSc
             where: { id: a.matchId, status: "PENDING" },
             data: {
               scheduledAt: a.scheduledAt,
-              courtId: a.courtId,
-              courtNumber: a.courtNumber,
+              scheduledCourtId: a.courtId,
+              scheduledCourtNumber: a.courtNumber,
             },
           });
         }
@@ -192,7 +208,11 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
   if (sourceMatch.status !== "PENDING") {
     return { error: "Only pending matches can be moved" };
   }
-  if (!sourceMatch.scheduledAt || !sourceMatch.courtId || sourceMatch.courtNumber === null) {
+  if (
+    !sourceMatch.scheduledAt ||
+    !sourceMatch.scheduledCourtId ||
+    sourceMatch.scheduledCourtNumber === null
+  ) {
     return { error: "Source match has no schedule" };
   }
 
@@ -212,8 +232,8 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
 
   // No-op: target equals current slot.
   if (
-    sourceMatch.courtId === input.targetCourtId &&
-    sourceMatch.courtNumber === input.targetCourtNumber &&
+    sourceMatch.scheduledCourtId === input.targetCourtId &&
+    sourceMatch.scheduledCourtNumber === input.targetCourtNumber &&
     sourceMatch.scheduledAt.getTime() === targetTime.getTime()
   ) {
     return { success: true, swapped: false };
@@ -229,23 +249,29 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
             id: true,
             status: true,
             scheduledAt: true,
-            courtId: true,
-            courtNumber: true,
+            scheduledCourtId: true,
+            scheduledCourtNumber: true,
             homeTeamId: true,
             awayTeamId: true,
           },
         });
-        if (!fresh || fresh.status !== "PENDING" || !fresh.scheduledAt || !fresh.courtId || fresh.courtNumber === null) {
+        if (
+          !fresh ||
+          fresh.status !== "PENDING" ||
+          !fresh.scheduledAt ||
+          !fresh.scheduledCourtId ||
+          fresh.scheduledCourtNumber === null
+        ) {
           return { error: "Source match is no longer eligible" };
         }
 
-        // Find any PENDING match currently sitting at the target slot.
+        // Find any PENDING match currently sitting at the target schedule slot.
         const targetMatch = await tx.match.findFirst({
           where: {
             tournamentId,
             status: "PENDING",
-            courtId: input.targetCourtId,
-            courtNumber: input.targetCourtNumber,
+            scheduledCourtId: input.targetCourtId,
+            scheduledCourtNumber: input.targetCourtNumber,
             scheduledAt: targetTime,
           },
           select: {
@@ -260,12 +286,13 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
           ? ([targetMatch.homeTeamId, targetMatch.awayTeamId].filter(Boolean) as string[])
           : [];
 
-        // Conflict check: does sourceMatch's teams play elsewhere at targetTime?
+        // Schedule-consistency check: would the printed timetable show
+        // sourceMatch's teams in two places at targetTime?
         if (sourceTeams.length > 0) {
           const conflicts = await tx.match.findMany({
             where: {
               tournamentId,
-              status: { in: ["PENDING", "ON_COURT"] },
+              status: "PENDING",
               scheduledAt: targetTime,
               id: { notIn: [fresh.id, ...(targetMatch ? [targetMatch.id] : [])] },
               OR: [
@@ -276,16 +303,16 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
             select: { id: true },
           });
           if (conflicts.length > 0) {
-            return { error: "A team in the moved match is already playing at the target time" };
+            return { error: "A team in the moved match is already scheduled at the target time" };
           }
         }
 
-        // Conflict check for the swap target: target's teams at source's original time.
+        // Same check for the swap target: target's teams at source's original time.
         if (targetMatch && targetTeams.length > 0) {
           const conflicts = await tx.match.findMany({
             where: {
               tournamentId,
-              status: { in: ["PENDING", "ON_COURT"] },
+              status: "PENDING",
               scheduledAt: fresh.scheduledAt,
               id: { notIn: [fresh.id, targetMatch.id] },
               OR: [
@@ -301,20 +328,20 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
         }
 
         if (targetMatch) {
-          // Swap: write source's old slot to targetMatch, target slot to source.
+          // Swap schedule slots between source and target.
           await tx.match.update({
             where: { id: targetMatch.id },
             data: {
-              courtId: fresh.courtId,
-              courtNumber: fresh.courtNumber,
+              scheduledCourtId: fresh.scheduledCourtId,
+              scheduledCourtNumber: fresh.scheduledCourtNumber,
               scheduledAt: fresh.scheduledAt,
             },
           });
           await tx.match.update({
             where: { id: fresh.id },
             data: {
-              courtId: input.targetCourtId,
-              courtNumber: input.targetCourtNumber,
+              scheduledCourtId: input.targetCourtId,
+              scheduledCourtNumber: input.targetCourtNumber,
               scheduledAt: targetTime,
             },
           });
@@ -324,8 +351,8 @@ export async function swapOrMoveScheduledMatch(input: SwapOrMoveInput) {
         await tx.match.update({
           where: { id: fresh.id },
           data: {
-            courtId: input.targetCourtId,
-            courtNumber: input.targetCourtNumber,
+            scheduledCourtId: input.targetCourtId,
+            scheduledCourtNumber: input.targetCourtNumber,
             scheduledAt: targetTime,
           },
         });
