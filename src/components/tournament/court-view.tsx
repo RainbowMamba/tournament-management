@@ -453,6 +453,73 @@ export function CourtView({ tournament }: Props) {
 
   const { groupedMatches, ungroupedMatches } = getMatchesByGroup();
 
+  function getCompletedSections() {
+    const qualifying = new Map<string, { groupId: string; groupName: string; matches: Match[] }>();
+    const main = new Map<number, { round: number; roundName: string; matches: Match[] }>();
+    const other: Match[] = [];
+
+    completedMatches.forEach((match) => {
+      const stage = tournament.stages.find((s) => s.id === match.stageId);
+      if (stage?.type === "QUALIFYING" && match.groupId && groupMap.has(match.groupId)) {
+        const groupInfo = groupMap.get(match.groupId)!;
+        const bucket = qualifying.get(match.groupId);
+        if (bucket) bucket.matches.push(match);
+        else qualifying.set(match.groupId, { groupId: match.groupId, groupName: groupInfo.name, matches: [match] });
+      } else if (stage?.type === "MAIN") {
+        const bucket = main.get(match.round);
+        if (bucket) bucket.matches.push(match);
+        else main.set(match.round, { round: match.round, roundName: getRoundName(match.round), matches: [match] });
+      } else {
+        other.push(match);
+      }
+    });
+
+    const qualifyingSections = [...qualifying.values()].sort((a, b) => a.groupName.localeCompare(b.groupName));
+    const mainSections = [...main.values()].sort((a, b) => a.round - b.round);
+    qualifyingSections.forEach((s) => s.matches.sort((a, b) => a.matchNumber - b.matchNumber));
+    mainSections.forEach((s) => s.matches.sort((a, b) => a.matchNumber - b.matchNumber));
+    other.sort((a, b) => a.matchNumber - b.matchNumber);
+
+    return { qualifyingSections, mainSections, otherMatches: other };
+  }
+
+  const { qualifyingSections: completedQualifying, mainSections: completedMain, otherMatches: completedOther } =
+    getCompletedSections();
+
+  function renderCompletedMatchRow(match: Match, label?: string) {
+    const winnerName = match.winnerTeam?.name;
+    return (
+      <div
+        key={match.id}
+        className="flex items-center gap-2 p-2.5 border rounded-md text-sm bg-background"
+      >
+        <Badge variant="outline" className="text-xs shrink-0">
+          {label ?? `#${match.matchNumber}`}
+        </Badge>
+        <div className="truncate flex-1 min-w-0">
+          <span className={cn("font-medium", winnerName === match.homeTeam?.name && "text-primary")}>
+            {match.homeTeam?.name || "TBD"}
+          </span>
+          <span className="text-muted-foreground mx-1">
+            {match.homeScore ?? "-"}:{match.awayScore ?? "-"}
+          </span>
+          <span className={cn("font-medium", winnerName === match.awayTeam?.name && "text-primary")}>
+            {match.awayTeam?.name || "TBD"}
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 shrink-0"
+          onClick={() => setEditingMatch(match)}
+        >
+          <Pencil className="h-3 w-3 mr-1" />
+          Edit
+        </Button>
+      </div>
+    );
+  }
+
   // Drag and drop handlers
   function handleDragStart(event: DragStartEvent) {
     const { active } = event;
@@ -1133,7 +1200,7 @@ export function CourtView({ tournament }: Props) {
 
           {/* Completed Matches */}
           {completedMatches.length > 0 && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold">Completed Matches</h3>
@@ -1145,47 +1212,62 @@ export function CourtView({ tournament }: Props) {
                   {completedMatches.length} matches
                 </Badge>
               </div>
-              <Card>
-                <CardContent className="p-3">
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {[...completedMatches]
-                      .sort((a, b) => b.matchNumber - a.matchNumber)
-                      .map((match) => {
-                        const winnerName = match.winnerTeam?.name;
-                        return (
-                          <div
-                            key={match.id}
-                            className="flex items-center gap-2 p-2.5 border rounded-md text-sm bg-background"
-                          >
-                            <Badge variant="outline" className="text-xs shrink-0">
-                              {getMatchLabel(match)}
-                            </Badge>
-                            <div className="truncate flex-1 min-w-0">
-                              <span className={cn("font-medium", winnerName === match.homeTeam?.name && "text-primary")}>
-                                {match.homeTeam?.name || "TBD"}
-                              </span>
-                              <span className="text-muted-foreground mx-1">
-                                {match.homeScore ?? "-"}:{match.awayScore ?? "-"}
-                              </span>
-                              <span className={cn("font-medium", winnerName === match.awayTeam?.name && "text-primary")}>
-                                {match.awayTeam?.name || "TBD"}
-                              </span>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 shrink-0"
-                              onClick={() => setEditingMatch(match)}
-                            >
-                              <Pencil className="h-3 w-3 mr-1" />
-                              Edit
-                            </Button>
+
+              {completedQualifying.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm text-muted-foreground">{t('qualifyingRound')}</h4>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {completedQualifying.map((group) => (
+                      <Card key={group.groupId} className="overflow-hidden">
+                        <CardHeader className="pb-2 bg-secondary/30">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-base">Group {group.groupName}</CardTitle>
+                            <Badge variant="outline" className="text-xs">{group.matches.length}</Badge>
                           </div>
-                        );
-                      })}
+                        </CardHeader>
+                        <CardContent className="p-2">
+                          <div className="space-y-1.5">
+                            {group.matches.map((match, idx) => renderCompletedMatchRow(match, `#${idx + 1}`))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              )}
+
+              {completedMain.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm text-muted-foreground">{t('mainDraw')}</h4>
+                  <div className="space-y-3">
+                    {completedMain.map((round) => (
+                      <Card key={round.round} className="overflow-hidden">
+                        <CardHeader className="pb-2 bg-secondary/30">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-base">{round.roundName}</CardTitle>
+                            <Badge variant="outline" className="text-xs">{round.matches.length}</Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-3">
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {round.matches.map((match, idx) => renderCompletedMatchRow(match, `#${idx + 1}`))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {completedOther.length > 0 && (
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {completedOther.map((match) => renderCompletedMatchRow(match))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
 
