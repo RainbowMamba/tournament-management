@@ -16,31 +16,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Trophy, LogOut, User, LayoutGrid, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "@/components/language-selector";
-import { toast } from "sonner";
-
-const LOGO_CLICK_KEY = "logo-click-streak";
-const LOGO_CLICK_WINDOW_MS = 2000;
-const LOGO_CLICK_THRESHOLD = 5;
-
-function handleLogoClick() {
-  const now = Date.now();
-  const stored = sessionStorage.getItem(LOGO_CLICK_KEY);
-  let count = 1;
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as { count: number; ts: number };
-      if (now - parsed.ts < LOGO_CLICK_WINDOW_MS) {
-        count = parsed.count + 1;
-      }
-    } catch {}
-  }
-  if (count >= LOGO_CLICK_THRESHOLD) {
-    toast("2025 테니스부 주장단 포에버 🎾");
-    sessionStorage.removeItem(LOGO_CLICK_KEY);
-    return;
-  }
-  sessionStorage.setItem(LOGO_CLICK_KEY, JSON.stringify({ count, ts: now }));
-}
+import { triggerLogoEasterEgg } from "@/lib/logo-easter-egg";
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -58,7 +34,7 @@ export function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 md:px-6 flex h-16 items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/tournaments" className="flex items-center gap-2" onClick={handleLogoClick}>
+          <Link href="/tournaments" className="flex items-center gap-2" onClick={triggerLogoEasterEgg}>
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <Trophy className="h-4 w-4 text-primary-foreground" />
             </div>

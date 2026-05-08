@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Trophy, Users, Eye, Settings, UserCheck } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { LanguageSelector } from "@/components/language-selector";
+import { LogoEasterEggWrapper } from "@/components/layout/logo-easter-egg-wrapper";
 
 export default async function HomePage() {
   const t = await getTranslations('home');
@@ -19,9 +20,11 @@ export default async function HomePage() {
       <div className="relative max-w-3xl w-full space-y-8">
         {/* Header */}
         <div className="text-center space-y-4">
-          <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <Trophy className="h-8 w-8 text-primary" />
-          </div>
+          <LogoEasterEggWrapper>
+            <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <Trophy className="h-8 w-8 text-primary" />
+            </div>
+          </LogoEasterEggWrapper>
           <h1 className="text-4xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">
             {t('subtitle')}
